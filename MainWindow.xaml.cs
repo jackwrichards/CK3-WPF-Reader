@@ -1,305 +1,224 @@
-﻿using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
-using System.Speech.Synthesis;
-using System;
-using System.Collections.ObjectModel;
-using System.Security.Cryptography.X509Certificates;
-using System.Runtime.CompilerServices;
+﻿using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.IO.Pipes;
-using System.Text.RegularExpressions;
-using System.DirectoryServices.ActiveDirectory;
-using System.Runtime.InteropServices;
-using System.Windows.Interop;
-using System.Diagnostics;
-
-
-
-public class SpeechExample
-{
-    // The _synthesizer variable is declared at the class level, allowing it to be accessed by any method within the class.
-    private SpeechSynthesizer _synthesizer;
-
-
-    // Constructor
-    public SpeechExample()
-    {
-        _synthesizer = new SpeechSynthesizer();
-    }
-
-    // Public property, This property returns the _synthesizer instance, allowing external classes to access it.
-    public SpeechSynthesizer Synthesizer
-    {
-        get { return _synthesizer; }
-    }
-
-    // Method to speak a given text
-    public void Speak(string text)
-    {
-        if (_synthesizer != null)
-        {
-            _synthesizer.Speak(text);
-        }
-    }
-}
+using System.Windows;
+using System.Windows.Media;
 
 namespace CK3_Reader
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
-    /// 
-
     public partial class MainWindow : Window
     {
-        int rate = Properties.Settings.Default.Rate;
-        int volume = Properties.Settings.Default.Volume;
-        int PercentRate = 0;
-        string TextRate = "";
-        string TextVolume = "";
-        string voice = "";
-        bool launched = false;
-        bool reading = true;
-        bool clipAll = false;
-        bool textShow = true;
-        bool lineShow = true;
-
-        private SpeechExample _speechExample;
-
-        private Thread _udpThread;
-
-        string documents = "";
-        string logPath = "";
-        string errorLog = "";
-        string debugLog = "";
-        string selectedLog = "";
-
-        string line = "";
+        private CancellationTokenSource? _cancellationTokenSource;
+        private readonly ClaudeService _claudeService;
+        private readonly ElevenLabsService _elevenLabsService;
+        
+        // Flag to prevent saving during initialization
+        private bool _isInitializing = true;
+        
+        // Voice quality settings
+        private double _stability = 0.5;
+        private double _similarityBoost = 0.75;
+        private double _style = 0.0;
+        private bool _useSpeakerBoost = true;
+        private bool _skipOpenAI = false;
+        private string _danielVoiceId = "yhf80q1381zd2JJQ4tM7";
+        
         string eventText = "";
         string[] formatting = [
-            @"\bL\b",
-                @"indent_newline:\d",
-                @"TOOLTIP:SCALED_STATIC_MODIFIER,\w+,\d+\.\d+,\w+,\w+",
-                @"TOOLTIP:\w+,\w+,\d+",
-                @"ONCLICK:\w+,\d+",
-                @"ONCLICK:\w+,\w+",
-                @"TOOLTIP:\w+,\w+",
-                @"TOOLTIP:\w+,\d+",
-                @"positive_value",
-                @"negative_value",
-                @"COLOR_\w_\w",
-                @"COLOR_\w",
-                @"portrait_punishment_icon!",
-                @"death_icon!",
-                @"skill_\w+_icon!",
-                @"_icon_\w+!",
-                @"_icon!",
-                @"skill_",
-                @"\w+ ",
-                @"\w;",
-                @"\w+",
-                @". ",
-                @".",
-                @"!",
-                @"\w;",
-                @";",
-                @"stress_\w+",
-                @"_",
-                "   ",
-                "  "
+            // Tooltip patterns
+            @"TOOLTIP:SCALED_STATIC_MODIFIER,\w+,\d+\.\d+,\w+,\w+",
+            @"TOOLTIP:\w+,\w+,\d+",
+            @"TOOLTIP:\w+,\d+",
+            @"TOOLTIP:\w+,\w+",
+            @"TOOLTIP:\w+",
+            
+            // OnClick patterns
+            @"ONCLICK:\w+,\d+",
+            @"ONCLICK:\w+,\w+",
+            @"ONCLICK:\w+",
+            
+            // Formatting codes
+            @"indent_newline:\d+",
+            @"newline:\d+",
+            
+            // Icon patterns (more comprehensive)
+            @"portrait_punishment_icon!",
+            @"death_icon!",
+            @"skill_\w+_icon!",
+            @"\w+_icon_\w+!",
+            @"\w+_icon!",
+            @"_icon!",
+            @"icon_\w+!",
+            
+            // Value and color patterns
+            @"positive_value",
+            @"negative_value",
+            @"COLOR_\w+_\w+",
+            @"COLOR_\w+",
+            
+            // Game-specific patterns
+            @"stress_\w+",
+            @"skill_\w+",
+            @"trait_\w+",
+            @"modifier_\w+",
+            
+            // Hidden/Special characters (IMPORTANT - add these first!)
+            @"[\x00-\x1F\x7F-\x9F]",     // Control characters (non-printable)
+            @"\u200B",                    // Zero-width space
+            @"\u200C",                    // Zero-width non-joiner
+            @"\u200D",                    // Zero-width joiner
+            @"\uFEFF",                    // Zero-width no-break space (BOM)
+            @"\u00A0",                    // Non-breaking space
+            @"\u2028",                    // Line separator
+            @"\u2029",                    // Paragraph separator
+            @"[\u2000-\u200F]",           // Various Unicode spaces
+            @"[\u202A-\u202E]",           // Bidirectional text control
+            
+            // Cleanup patterns (order matters!)
+            @"\bL\b",              // Single 'L' character
+            @";\s*",               // Semicolon with optional spaces
+            @"!+",                 // One or more exclamation marks
+            @"_{2,}",              // Multiple underscores
+            @"\[[\w\s]+\]",        // Square bracket tags like [GetTrait]
+            @"#\w+",               // Hash tags like #high
+            @"\$\w+\$",            // Dollar sign variables
+            @"@\w+!",              // At-sign references
+            @"\s{2,}"              // Multiple whitespace characters (keep at end to collapse spaces)
         ];
-
-        private CancellationTokenSource _cancellationTokenSource;
-
-        // Win32 API constants and imports for hotkeys
-        const int WM_HOTKEY = 0x0312;
-
-        [DllImport("user32.dll")]
-        public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-        [DllImport("user32.dll")]
-        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-        // Win32 API imports for getting the active window title
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-        public static string GetActiveWindowTitle()
-        {
-            const int nChars = 256;
-            StringBuilder Buff = new StringBuilder(nChars);
-            IntPtr handle = GetForegroundWindow();
-
-            if (GetWindowText(handle, Buff, nChars) > 0)
-            {
-                return Buff.ToString();
-            }
-            return null;
-        }
-
-        // Win32 API constants and imports
-        private const int WM_CLIPBOARDUPDATE = 0x031D;
-
-        [DllImport("user32.dll")]
-        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
-
-
-        [DllImport("user32.dll")]
-        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
-
-        private HwndSource _hwndSource;
-
-        protected override void OnSourceInitialized(EventArgs e)
-        {
-            base.OnSourceInitialized(e);
-            _hwndSource = PresentationSource.FromVisual(this) as HwndSource;
-            _hwndSource.AddHook(WndProc);
-            AddClipboardFormatListener(_hwndSource.Handle);
-            var helper = new WindowInteropHelper(this);
-            RegisterHotKey(helper.Handle, 1, 0x1, 0x43); //Alt C
-            HwndSource source = HwndSource.FromHwnd(helper.Handle);
-            source.AddHook(HwndHook);
-        }
-
-        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            if (msg == WM_HOTKEY)
-            {
-                int id = wParam.ToInt32();
-                if (id == 1)
-                {
-                    // CTRL + G was pressed
-                    StopSpeech();
-                }
-                handled = true;
-            }
-            return IntPtr.Zero;
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            RemoveClipboardFormatListener(_hwndSource.Handle);
-            base.OnClosed(e);
-            var helper = new WindowInteropHelper(this);
-            UnregisterHotKey(helper.Handle, 1);
-        }
-
-        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            if (msg == WM_CLIPBOARDUPDATE)
-            {
-                if (Clipboard.ContainsText())
-                {
-
-                    string activeTitle = GetActiveWindowTitle();
-                    if ( clipAll == true || ( activeTitle == "Crusader Kings III" || activeTitle == "Europa Universalis V") )
-                    {
-                        StopSpeech();
-
-                        string clipboardText = Clipboard.GetText();
-                        eventText = clipboardText;
-                        eventText += "\n";
-
-                        foreach (var format in formatting)
-                        {
-                            eventText = Regex.Replace(eventText, format, " ");
-                        }
-
-                        // Update the UI
-                        Dispatcher.Invoke(() =>
-                        {
-                            txtLastLine.Text = "Copied from clipbard";
-                            txtEvent.Text = eventText;
-                        });
-                        _speechExample.Synthesizer.SpeakAsync(eventText);
-                    }
-
-                }
-                handled = true;
-            }
-            return IntPtr.Zero;
-        }
-
 
         public MainWindow()
         {
             InitializeComponent();
+            _claudeService = new ClaudeService();
+            _elevenLabsService = new ElevenLabsService();
 
-            ShowTextCheckbox.IsChecked = true;
-            ShowLastLineCheckbox.IsChecked = true;
+            // Load saved settings
+            LoadSettings();
 
-            //DebugButton.IsChecked = (Properties.Settings.Default.log == "debug");
-            //ErrorButton.IsChecked = (Properties.Settings.Default.log == "error");
-            rate = Properties.Settings.Default.Rate;
-            volume = Properties.Settings.Default.Volume;
-            volumeSlider.Value = Properties.Settings.Default.Volume;
-            speechSlider.Value = Properties.Settings.Default.Rate;
+            string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            string logPath = documents + "\\Paradox Interactive\\Crusader Kings III\\logs\\";
+            string debugLog = logPath + "debug.log";
 
-            DisplayRate();
-
-            _speechExample = new SpeechExample();
-            _speechExample.Synthesizer.Rate = rate;
-            _speechExample.Synthesizer.Volume = volume;
-
-            _speechExample.Synthesizer.SetOutputToDefaultAudioDevice();
-            int voiceCounter = -1;
-
-            foreach (InstalledVoice voice in _speechExample.Synthesizer.GetInstalledVoices())
+            if (File.Exists(debugLog))
             {
-                VoiceBox.Items.Add(voice.VoiceInfo.Name);
-                voiceCounter++;
+                txtStatus.Text = "✔️ Ready - Monitoring CK3 debug.log";
+            }
+            else
+            {
+                txtStatus.Text = "❌ CK3 debug.log not found at: " + debugLog;
+            }
 
-                if (Properties.Settings.Default.Voice.Length > 0)
+            // Mark initialization as complete
+            _isInitializing = false;
+
+            Loaded += MainWindow_Loaded;
+        }
+
+        private void LoadSettings()
+        {
+            try
+            {
+                // Load Claude API key
+                string savedApiKey = Properties.Settings.Default.OpenAIApiKey;
+                if (!string.IsNullOrWhiteSpace(savedApiKey))
                 {
-                    if (Properties.Settings.Default.Voice == voice.VoiceInfo.Name)
-                    {
-                        VoiceBox.SelectedIndex = voiceCounter;
-                    }
+                    txtApiKey.Password = savedApiKey;
+                    _claudeService.SetApiKey(savedApiKey);
+                    txtApiStatus.Text = "✔️ API key set - Auto-processing enabled";
+                    txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                }
+
+                // Load ElevenLabs API key
+                string savedElevenLabsKey = Properties.Settings.Default.ElevenLabsApiKey;
+                if (!string.IsNullOrWhiteSpace(savedElevenLabsKey))
+                {
+                    txtElevenLabsApiKey.Password = savedElevenLabsKey;
+                    _elevenLabsService.SetApiKey(savedElevenLabsKey);
+                    txtElevenLabsStatus.Text = "✔️ API key set - TTS enabled";
+                    txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                }
+
+                // Load volume setting
+                double savedVolume = Properties.Settings.Default.Volume;
+                if (savedVolume > 0)
+                {
+                    volumeSlider.Value = savedVolume;
+                    _elevenLabsService.SetVolume(savedVolume / 100.0);
+                }
+
+                // Load speed setting
+                double savedSpeed = Properties.Settings.Default.PlaybackSpeed;
+                if (savedSpeed > 0)
+                {
+                    speedSlider.Value = savedSpeed;
+                    _elevenLabsService.SetSpeed(savedSpeed / 100.0);
+                }
+
+                // Load voice quality settings
+                _stability = Properties.Settings.Default.Stability;
+                stabilitySlider.Value = _stability * 100;
+                
+                _similarityBoost = Properties.Settings.Default.SimilarityBoost;
+                similaritySlider.Value = _similarityBoost * 100;
+                
+                _style = Properties.Settings.Default.Style;
+                styleSlider.Value = _style * 100;
+                
+                _useSpeakerBoost = Properties.Settings.Default.UseSpeakerBoost;
+                speakerBoostCheckbox.IsChecked = _useSpeakerBoost;
+
+                // Load skip OpenAI setting
+                _skipOpenAI = Properties.Settings.Default.SkipOpenAI;
+                skipOpenAICheckbox.IsChecked = _skipOpenAI;
+                UpdateModeInfo();
+
+                // Load Daniel voice ID setting
+                string savedDanielVoiceId = Properties.Settings.Default.DanielVoiceId;
+                if (!string.IsNullOrWhiteSpace(savedDanielVoiceId))
+                {
+                    _danielVoiceId = savedDanielVoiceId;
+                    txtDanielVoiceId.Text = _danielVoiceId;
+                    DialogueParser.SetDanielVoiceId(_danielVoiceId);
                 }
                 else
                 {
-                    VoiceBox.SelectedIndex = 0;
+                    txtDanielVoiceId.Text = _danielVoiceId;
                 }
             }
-
-            if (Properties.Settings.Default.Voice.Length > 0 )
+            catch (Exception ex)
             {
-                _speechExample.Synthesizer.SelectVoice(Properties.Settings.Default.Voice);
+                txtStatus.Text = $"⚠️ Error loading settings: {ex.Message}";
+            }
+        }
+
+        private void SaveSettings()
+        {
+            // Don't save during initialization
+            if (_isInitializing)
+            {
+                return;
             }
 
-            _speechExample.Synthesizer.SpeakAsync("Launching CK3 Reader");
-
-            launched = true;
-
-            string documents = System.Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            string logPath = documents + "\\Paradox Interactive\\Crusader Kings III\\logs\\";
-            string errorLog = logPath + "error.log";
-            string debugLog = logPath + "debug.log";
-            //string selectedLog = logPath + Properties.Settings.Default.log + ".log";
-            string selectedLog = debugLog;
-
-            if (System.IO.File.Exists(selectedLog))
+            try
             {
-                //lblStatus.Text = "✔️ ready, reading "+ Properties.Settings.Default.log + " log";
-                lblStatus.Text = "✔️ ready, reading game log";
-                lblStatus.Foreground = Brushes.Green;
-
+                Properties.Settings.Default.OpenAIApiKey = txtApiKey.Password;
+                Properties.Settings.Default.ElevenLabsApiKey = txtElevenLabsApiKey.Password;
+                Properties.Settings.Default.Volume = volumeSlider.Value;
+                Properties.Settings.Default.PlaybackSpeed = speedSlider.Value;
+                Properties.Settings.Default.Stability = _stability;
+                Properties.Settings.Default.SimilarityBoost = _similarityBoost;
+                Properties.Settings.Default.Style = _style;
+                Properties.Settings.Default.UseSpeakerBoost = _useSpeakerBoost;
+                Properties.Settings.Default.SkipOpenAI = _skipOpenAI;
+                Properties.Settings.Default.DanielVoiceId = _danielVoiceId;
+                Properties.Settings.Default.Save();
             }
-
-            Loaded += MainWindow_Loaded; // Subscribe to the Loaded event
+            catch (Exception ex)
+            {
+                txtStatus.Text = $"⚠️ Error saving settings: {ex.Message}";
+            }
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -308,300 +227,476 @@ namespace CK3_Reader
             await Task.Run(() => RunLoop(_cancellationTokenSource.Token));
         }
 
-        private async void Restart_Click(object sender, RoutedEventArgs e)
-        {
-            _cancellationTokenSource = new CancellationTokenSource();
-            StopLoop();
-            await Task.Run(() => RunLoop(_cancellationTokenSource.Token));
-        }
-
         private void RunLoop(CancellationToken token)
         {
             string counter = string.Empty;
-            string documents = System.Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             string logPath = documents + "\\Paradox Interactive\\Crusader Kings III\\logs\\";
-            string errorLog = logPath + "error.log";
             string debugLog = logPath + "debug.log";
-            //string selectedLog = logPath + Properties.Settings.Default.log + ".log";
-            string selectedLog = debugLog;
             string beginPattern = "<event-text>";
             string endPattern = "</event-text>";
-            string stopReading = "<stop reading>";
             bool startMessage = false;
+            
+            // Debug tracking
+            long lastFileSize = 0;
+            DateTime lastModified = DateTime.MinValue;
+            int linesRead = 0;
+            string lastLine = "";
+            int eventMarkersFound = 0;
 
-
-            // Update the variable
-
-            using (FileStream stream = new FileStream(selectedLog, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+            try
             {
-                StreamReader reader = new StreamReader(stream);
-                stream.Seek(0, SeekOrigin.End);
-
-     
-                //long fileLength = stream.Length;
-                //if (fileLength == 0)
-                //{
-                //    Console.WriteLine("The file is empty.");
-                //    return;
-                //}
-
-                //// Start from the end of the file
-                //long fileLength = stream.Length;
-
-
-                //// Buffer to hold the current line
-                //StringBuilder currentLine = new StringBuilder();
-                //int lineCount = 0;
-
-                while (true)
+                // Initial file info
+                FileInfo fileInfo = new FileInfo(debugLog);
+                lastFileSize = fileInfo.Length;
+                lastModified = fileInfo.LastWriteTime;
+                
+                Dispatcher.Invoke(() =>
                 {
-                    line = reader.ReadLine();
+                    txtStatus.Text = $"📂 Log file: {debugLog}\n" +
+                                   $"📊 Size: {lastFileSize:N0} bytes\n" +
+                                   $"🕒 Modified: {lastModified:HH:mm:ss}\n" +
+                                   $"✅ Monitoring from end of file...";
+                });
 
-                    // this is just a little counter showing that it's reading lines, no other effect
-                    counter += ".";
-                    if (counter.Length > 6)
+                using (FileStream stream = new FileStream(debugLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    StreamReader reader = new StreamReader(stream);
+                    long startPosition = stream.Length;
+                    stream.Seek(0, SeekOrigin.End); // Start reading from the end of the file
+
+                    Dispatcher.Invoke(() =>
                     {
-                        counter = string.Empty;
-                    }
+                        txtEvent.Text = $"🔍 DEBUG INFO:\n" +
+                                       $"Starting position: {startPosition:N0} bytes\n" +
+                                       $"Waiting for new events...\n" +
+                                       $"Looking for: {beginPattern} and {endPattern}\n\n" +
+                                       $"💡 TIP: The app only detects NEW events after it starts.\n" +
+                                       $"Trigger an event in CK3 to test!";
+                    });
 
-
-                    // Check if cancellation is requested
-                    if (token.IsCancellationRequested)
+                    while (!token.IsCancellationRequested)
                     {
-                        break;
-                    }
+                        string? line = reader.ReadLine();
 
-                    if (line != null)
-                    {
-                        if (line.Contains("<stop reading>"))
+                        // Visual counter to show the app is running
+                        counter += ".";
+                        if (counter.Length > 6)
                         {
-                            StopSpeech();
+                            counter = string.Empty;
                         }
-                        else
+
+                        if (line != null)
                         {
+                            linesRead++;
+                            lastLine = line.Length > 100 ? line.Substring(0, 100) + "..." : line;
+                            
+                            // Check file size changes
+                            if (linesRead % 100 == 0)
+                            {
+                                fileInfo.Refresh();
+                                if (fileInfo.Length != lastFileSize || fileInfo.LastWriteTime != lastModified)
+                                {
+                                    lastFileSize = fileInfo.Length;
+                                    lastModified = fileInfo.LastWriteTime;
+                                }
+                            }
+                            // Check for start of event
                             if (line.Contains(beginPattern))
                             {
+                                eventMarkersFound++;
                                 eventText = string.Empty;
-                                startMessage = true;   
+                                startMessage = true;
+                                
+                                Dispatcher.Invoke(() =>
+                                {
+                                    txtStatus.Text = $"🎯 Event marker found! (#{eventMarkersFound})";
+                                    txtEvent.Text = $"📥 Collecting event text...\nLine: {line}";
+                                });
                             }
-                            if (startMessage == true)
+
+                            // Collect event text
+                            if (startMessage)
                             {
                                 eventText += "\n";
                                 eventText += Regex.Replace(line, @".*\<event-text\>", "");
 
-                                foreach (var format in formatting)
+                                // Check for end of event or max length
+                                if (line.Contains(endPattern) || eventText.Length > 10000)
                                 {
-                                    eventText = Regex.Replace(eventText, format, " ");
-                                }
-                                if (line.EndsWith(endPattern) || eventText.Length > 10000)
-                                {
+                                    // Remove end tag
                                     eventText = eventText.Replace(endPattern, "");
                                     startMessage = false;
-                                    _speechExample.Synthesizer.SpeakAsync(eventText);
+
+                                    // Store raw text before cleanup for debugging
+                                    string rawEventText = eventText;
+
+                                    // Apply formatting filters to clean up CK3 markup
+                                    foreach (var format in formatting)
+                                    {
+                                        eventText = Regex.Replace(eventText, format, " ");
+                                    }
+
+                                    // Update UI with both raw and cleaned event text
+                                    Dispatcher.Invoke(async () =>
+                                    {
+                                        // Stop any currently playing audio when a new event is detected
+                                        _elevenLabsService.StopPlayback();
+                                        
+                                        txtStatus.Text = "✔️ Event found";
+                                        
+                                        // Show user-friendly current event
+                                        txtCurrentEvent.Text = eventText.Trim();
+                                        
+                                        // Show debug info only if debug mode is enabled
+                                        if (debugModeCheckbox.IsChecked == true)
+                                        {
+                                            txtEvent.Text = "=== RAW CK3 LOG CONTENT ===\n" + rawEventText.Trim() +
+                                                           "\n\n=== CLEANED TEXT ===\n" + eventText.Trim();
+                                        }
+                                        
+                                        // Check if we should skip OpenAI and go directly to ElevenLabs Flash
+                                        if (_skipOpenAI && _elevenLabsService.HasApiKey())
+                                        {
+                                            try
+                                            {
+                                                txtStatus.Text = "🔊 Generating speech with Flash v2.5...";
+                                                txtLlmTranslation.Text = "⚡ Skipping OpenAI - Using direct Flash v2.5 mode";
+                                                txtElevenLabsTtsStatus.Text = "🔊 Generating speech with ElevenLabs Flash v2.5...";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(33, 150, 243));
+                                                
+                                                // Use Flash model directly with the raw event text
+                                                await _elevenLabsService.TextToSpeechFlashAsync(
+                                                    eventText.Trim(),
+                                                    _danielVoiceId, // Daniel voice (configurable)
+                                                    _stability,
+                                                    _similarityBoost);
+                                                
+                                                txtStatus.Text = "✔️ Speech playback complete (Flash mode)";
+                                                txtElevenLabsTtsStatus.Text = "✔️ Flash v2.5 speech playback complete";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                                            }
+                                            catch (Exception ttsEx)
+                                            {
+                                                txtStatus.Text = $"⚠️ TTS Error: {ttsEx.Message}";
+                                                txtElevenLabsTtsStatus.Text = $"❌ Error: {ttsEx.Message}";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(231, 76, 60));
+                                            }
+                                        }
+                                        // Automatically process with Claude if API key is set
+                                        else if (_claudeService.HasApiKey())
+                                        {
+                                            try
+                                            {
+                                                txtLlmTranslation.Text = "Processing with Claude...";
+                                                txtElevenLabsTtsStatus.Text = "Waiting for Claude processing...";
+                                                
+                                                string aiResponse = await _claudeService.ProcessEventTextAsync(eventText.Trim());
+                                                
+                                                // Show in current event (user-friendly)
+                                                txtCurrentEvent.Text = aiResponse;
+                                                
+                                                // Show debug info only if debug mode is enabled
+                                                if (debugModeCheckbox.IsChecked == true)
+                                                {
+                                                    txtLlmTranslation.Text = aiResponse;
+                                                    
+                                                    // Parse the dialogue to show what was extracted
+                                                    var parsedEntries = DialogueParser.ParseOpenAIResponse(aiResponse);
+                                                    var parsedText = new System.Text.StringBuilder();
+                                                    parsedText.AppendLine($"Total speakers found: {parsedEntries.Count}\n");
+                                                    
+                                                    foreach (var entry in parsedEntries)
+                                                    {
+                                                        var textPreview = entry.Text.Length > 60 ? entry.Text.Substring(0, 60) + "..." : entry.Text;
+                                                        parsedText.AppendLine($"🎤 {entry.VoiceName}");
+                                                        parsedText.AppendLine($"   Voice ID: {entry.VoiceId}");
+                                                        parsedText.AppendLine($"   Text: {textPreview}");
+                                                        parsedText.AppendLine();
+                                                    }
+                                                    
+                                                    txtParsedDialogue.Text = parsedText.ToString();
+                                                }
+
+                                                // Automatically play with ElevenLabs if API key is set
+                                                if (_elevenLabsService.HasApiKey())
+                                                {
+                                                    try
+                                                    {
+                                                        txtStatus.Text = "🔊 Generating multi-speaker speech...";
+                                                        txtElevenLabsTtsStatus.Text = "🔊 Generating multi-speaker speech with ElevenLabs v3...";
+                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(33, 150, 243));
+                                                        
+                                                        // Use the new multi-speaker method that parses OpenAI response with voice quality settings
+                                                        await _elevenLabsService.TextToSpeechFromOpenAIAsync(
+                                                            aiResponse,
+                                                            _stability,
+                                                            _similarityBoost,
+                                                            _style,
+                                                            _useSpeakerBoost);
+                                                        
+                                                        txtStatus.Text = "✔️ Speech playback complete";
+                                                        txtElevenLabsTtsStatus.Text = "✔️ Multi-speaker speech playback complete";
+                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                                                    }
+                                                    catch (Exception ttsEx)
+                                                    {
+                                                        txtStatus.Text = $"⚠️ TTS Error: {ttsEx.Message}";
+                                                        txtElevenLabsTtsStatus.Text = $"❌ Error: {ttsEx.Message}";
+                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(231, 76, 60));
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    txtStatus.Text = "✔️ Event processed (TTS disabled - set ElevenLabs API key)";
+                                                    txtElevenLabsTtsStatus.Text = "⚠️ Set ElevenLabs API key in the sidebar to enable TTS";
+                                                    txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                txtLlmTranslation.Text = $"Error processing with AI: {ex.Message}";
+                                                txtElevenLabsTtsStatus.Text = "⚠️ Claude processing failed";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (_skipOpenAI)
+                                            {
+                                                txtLlmTranslation.Text = "⚠️ Set ElevenLabs API key in the sidebar to enable Flash mode.";
+                                                txtElevenLabsTtsStatus.Text = "⚠️ ElevenLabs API key required for Flash mode";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                            }
+                                            else
+                                            {
+                                                txtLlmTranslation.Text = "⚠️ Set Claude API key in the sidebar to enable automatic translation.";
+                                                txtElevenLabsTtsStatus.Text = "⚠️ Claude API key required";
+                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                            }
+                                        }
+                                    });
+                                    
+                                    // Reset for next event
+                                    eventText = string.Empty;
                                 }
                             }
                         }
-
-                        // Update the UI
-                        Dispatcher.Invoke(() =>
+                        else
                         {
-                            txtLastLine.Text = "Last read line: " + line;
-                            txtEvent.Text = eventText;
-                        });
-                    }
+                            // No new line available, wait a bit
+                            Thread.Sleep(20); // Check every 20ms
+                        }
 
-                    // If we haven't found an event, we wait 100ms (or 10)
-                    // Without this it would be way too fast and eat up CPU
-                    if (startMessage == false)
-                    {
-                        Thread.Sleep(Properties.Settings.Default.refresh);
-                        //Thread.Sleep(10);
+                        // Update status counter with debug info
+                        if (!startMessage && linesRead % 50 == 0)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (!txtStatus.Text.Contains("Event found") && !txtStatus.Text.Contains("Event marker"))
+                                {
+                                    txtStatus.Text = $"📡 Monitoring{counter}\n" +
+                                                   $"Lines read: {linesRead:N0}\n" +
+                                                   $"File size: {lastFileSize:N0} bytes\n" +
+                                                   $"Events found: {eventMarkersFound}";
+                                    
+                                    if (!string.IsNullOrEmpty(lastLine))
+                                    {
+                                        txtEvent.Text = $"🔍 DEBUG INFO:\n" +
+                                                       $"Lines scanned: {linesRead:N0}\n" +
+                                                       $"Events detected: {eventMarkersFound}\n" +
+                                                       $"File size: {lastFileSize:N0} bytes\n" +
+                                                       $"Last modified: {lastModified:HH:mm:ss}\n\n" +
+                                                       $"Last line read:\n{lastLine}\n\n" +
+                                                       $"💡 Waiting for '{beginPattern}' marker...";
+                                    }
+                                }
+                            });
+                        }
                     }
-
-                    Dispatcher.Invoke(() =>
-                    {
-                        txtCounter.Text = counter;
-                    });
                 }
             }
-
-            if (eventText.Length > 10000)
+            catch (Exception ex)
             {
-                startMessage = false;
+                Dispatcher.Invoke(() =>
+                {
+                    txtStatus.Text = "❌ Error: " + ex.Message;
+                });
             }
-
-            //string[] lines = System.IO.File.ReadAllLines(errorLog);
-            //if (lines.Length > 0)
-            //{
-            //    line = lines[lines.Length-1];
-            //}
-
         }
 
-        // Optional: You can add a method to stop the loop if needed
         private void StopLoop()
         {
             _cancellationTokenSource?.Cancel();
         }
 
-        public void DisplayRate()
-        {
-            PercentRate = rate * 10 + 100;
-            TextRate = "Speech Rate: " + PercentRate.ToString() + "%";
-            SpeechRate.Content = TextRate;
-        }
-
-        public void DisplayVolume()
-        {
-            TextVolume = "Speech Volume: " + volume.ToString() + "%";
-            SpeechVolume.Content = TextVolume;
-        }
-
-        public void StopSpeech()
-        {
-            _speechExample.Synthesizer.SpeakAsyncCancelAll();
-            reading = false;
-            //_speechExample.Synthesizer.Dispose();
-        }
-
-        // controls
-
-        
-
-        public void StopButton_Click(object sender, RoutedEventArgs e)
-        {
-            StopSpeech();
-            //StopButton.IsEnabled = (_speechExample.Synthesizer.State.ToString() == "Speaking");
-        }
-
-        public void Stop_Click(object sender, RoutedEventArgs e)
-        {
-            StopSpeech();
-            StopLoop();
-        }
-
-        public void Button_Click(object sender, RoutedEventArgs e)
-        {
-
-            _speechExample.Synthesizer.SpeakAsyncCancelAll();
-
-            _speechExample.Synthesizer.SpeakAsync("Crusader Kings 3");
-
-        }
-
-        public void Error_radio(object sender, RoutedEventArgs e)
-        {
-            Properties.Settings.Default.log = "error";
-            Properties.Settings.Default.Save();
-            ErrorButton.IsChecked = (Properties.Settings.Default.log == "error");
-            lblStatus.Text = "✔️ ready, reading " + Properties.Settings.Default.log + " log";
-            lblStatus.Foreground = Brushes.Green;
-        }
-
-        public void Debug_radio(object sender, RoutedEventArgs e)
-        {
-            Properties.Settings.Default.log = "debug";
-            Properties.Settings.Default.Save();
-            DebugButton.IsChecked = (Properties.Settings.Default.log == "debug");
-            lblStatus.Text = "✔️ ready, reading " + Properties.Settings.Default.log + " log";
-            lblStatus.Foreground = Brushes.Green;
-        }
-
-        private void speechSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            rate = (int)e.NewValue;
-            Properties.Settings.Default.Rate = rate;
-            Properties.Settings.Default.Save();
-            DisplayRate();
-            if (_speechExample != null)
-            {
-                _speechExample.Synthesizer.Rate = rate;
-                _speechExample.Synthesizer.SpeakAsyncCancelAll();
-                _speechExample.Synthesizer.SpeakAsync(PercentRate.ToString());
-            }
-        }
-        private void volumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            volume = (int)e.NewValue;
-            Properties.Settings.Default.Volume = volume;
-            Properties.Settings.Default.Save();
-            DisplayVolume();
-            if (_speechExample != null)
-            {
-                _speechExample.Synthesizer.Volume = volume;
-                _speechExample.Synthesizer.SpeakAsyncCancelAll();
-                _speechExample.Synthesizer.SpeakAsync(volume.ToString());
-            }
-        }
-
-        public void VoiceBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            voice = VoiceBox.SelectedItem.ToString();
-            _speechExample.Synthesizer.SelectVoice(voice);
-            if (launched == true)
-            {
-                _speechExample.Synthesizer.SpeakAsync(voice);
-            }
-            Properties.Settings.Default.Voice = voice;
-            Properties.Settings.Default.Save();
-            //synth.Dispose();
-
-        }
-
         private void Window_closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            StopSpeech();
-            _speechExample.Synthesizer.Dispose();
             StopLoop();
+            _elevenLabsService.StopPlayback();
+            _elevenLabsService.Dispose();
+            SaveSettings();
         }
 
-        public void Clip_Checked(object sender, RoutedEventArgs e)
+        private void TxtApiKey_PasswordChanged(object sender, RoutedEventArgs e)
         {
-            clipAll = false;
+            var passwordBox = sender as System.Windows.Controls.PasswordBox;
+            if (passwordBox != null)
+            {
+                string apiKey = passwordBox.Password;
+                _claudeService.SetApiKey(apiKey);
+                
+                if (_claudeService.HasApiKey())
+                {
+                    txtApiStatus.Text = "✔️ API key set - Auto-processing enabled";
+                    txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                }
+                else
+                {
+                    txtApiStatus.Text = "⚠️ No API key set";
+                    txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                }
+                
+                SaveSettings();
+            }
         }
 
-        public void Clip_Unchecked(object sender, RoutedEventArgs e)
+        private void TxtElevenLabsApiKey_PasswordChanged(object sender, RoutedEventArgs e)
         {
-            clipAll = true;
+            var passwordBox = sender as System.Windows.Controls.PasswordBox;
+            if (passwordBox != null)
+            {
+                string apiKey = passwordBox.Password;
+                _elevenLabsService.SetApiKey(apiKey);
+                
+                if (_elevenLabsService.HasApiKey())
+                {
+                    txtElevenLabsStatus.Text = "✔️ API key set - TTS enabled";
+                    txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                }
+                else
+                {
+                    txtElevenLabsStatus.Text = "⚠️ No API key set";
+                    txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                }
+                
+                SaveSettings();
+            }
         }
 
-        private void RefreshNormal_Checked(object sender, RoutedEventArgs e)
+        private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            Properties.Settings.Default.refresh = 20;
-            Properties.Settings.Default.Save();
-            RefreshNormal.IsChecked = (Properties.Settings.Default.refresh == 20);
+            if (volumeLabel != null && _elevenLabsService != null)
+            {
+                volumeLabel.Text = $"{(int)e.NewValue}%";
+                _elevenLabsService.SetVolume(e.NewValue / 100.0);
+                SaveSettings();
+            }
         }
 
-        private void RefreshFast_Checked(object sender, RoutedEventArgs e)
+        private void SpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            Properties.Settings.Default.refresh = 5;
-            Properties.Settings.Default.Save();
-            RefreshFast.IsChecked = (Properties.Settings.Default.refresh == 5);
+            if (speedLabel != null && _elevenLabsService != null)
+            {
+                double speed = e.NewValue / 100.0;
+                speedLabel.Text = $"{speed:F1}x";
+                _elevenLabsService.SetSpeed(speed);
+                SaveSettings();
+            }
         }
 
-        public void StopTalkingG(Object sender, ExecutedRoutedEventArgs e)
+        private void StabilitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            StopSpeech();
+            if (stabilityLabel != null)
+            {
+                _stability = e.NewValue / 100.0;
+                stabilityLabel.Text = $"{_stability:F2}";
+                SaveSettings();
+            }
         }
 
-        private void Line_Checked(object sender, RoutedEventArgs e)
+        private void SimilaritySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            txtLastLine.Visibility = Visibility.Visible;
-        }
-        private void Line_Unchecked(object sender, RoutedEventArgs e)
-        {
-            txtLastLine.Visibility = Visibility.Collapsed;
+            if (similarityLabel != null)
+            {
+                _similarityBoost = e.NewValue / 100.0;
+                similarityLabel.Text = $"{_similarityBoost:F2}";
+                SaveSettings();
+            }
         }
 
-        private void Text_Checked(object sender, RoutedEventArgs e)
+        private void StyleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            RightScrollbox.Visibility = Visibility.Visible;
-            this.Width = 830;
+            if (styleLabel != null)
+            {
+                _style = e.NewValue / 100.0;
+                styleLabel.Text = $"{_style:F2}";
+                SaveSettings();
+            }
         }
-        private void Text_Unchecked(object sender, RoutedEventArgs e)
+
+        private void SpeakerBoostCheckbox_Changed(object sender, RoutedEventArgs e)
         {
-            RightScrollbox.Visibility = Visibility.Collapsed;
-            this.Width = 360;
+            if (speakerBoostCheckbox != null)
+            {
+                _useSpeakerBoost = speakerBoostCheckbox.IsChecked ?? true;
+                SaveSettings();
+            }
+        }
+
+        private void SkipOpenAICheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (skipOpenAICheckbox != null)
+            {
+                _skipOpenAI = skipOpenAICheckbox.IsChecked ?? false;
+                UpdateModeInfo();
+                SaveSettings();
+            }
+        }
+
+        private void UpdateModeInfo()
+        {
+            if (txtModeInfo != null)
+            {
+                if (_skipOpenAI)
+                {
+                    txtModeInfo.Text = "⚡ Flash Mode: Events will be sent directly to ElevenLabs Flash v2.5 (faster, no Claude processing). Settings are saved automatically.";
+                }
+                else
+                {
+                    txtModeInfo.Text = "Events will be automatically processed with Claude and played via ElevenLabs TTS. Settings are saved automatically.";
+                }
+            }
+        }
+
+        private void TxtDanielVoiceId_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            if (txtDanielVoiceId != null && !_isInitializing)
+            {
+                _danielVoiceId = txtDanielVoiceId.Text.Trim();
+                if (!string.IsNullOrWhiteSpace(_danielVoiceId))
+                {
+                    DialogueParser.SetDanielVoiceId(_danielVoiceId);
+                    SaveSettings();
+                }
+            }
+        }
+
+        private void BtnStopVoice_Click(object sender, RoutedEventArgs e)
+        {
+            _elevenLabsService.StopPlayback();
+            txtStatus.Text = "⏹️ Voice playback stopped";
+            txtElevenLabsTtsStatus.Text = "⏹️ Playback stopped by user";
+            txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 152, 0));
+        }
+
+        private void DebugModeCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            if (debugModeCheckbox != null && debugPanel != null)
+            {
+                // Show or hide debug panel based on checkbox state
+                debugPanel.Visibility = debugModeCheckbox.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
     }
 }

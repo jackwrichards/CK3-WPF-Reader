@@ -1,21 +1,39 @@
-﻿<?xml version='1.0' encoding='utf-8'?>
-<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="CK3_WPF_Reader.Properties" GeneratedClassName="Settings">
+<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="CK3_Reader.Properties" GeneratedClassName="Settings">
   <Profiles />
   <Settings>
-    <Setting Name="Rate" Type="System.Int32" Scope="User">
-      <Value Profile="(Default)">5</Value>
+    <Setting Name="OpenAIApiKey" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
     </Setting>
-    <Setting Name="Volume" Type="System.Int32" Scope="User">
-      <Value Profile="(Default)">70</Value>
+    <Setting Name="ElevenLabsApiKey" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
     </Setting>
-    <Setting Name="log" Type="System.String" Scope="User">
-      <Value Profile="(Default)">error</Value>
-    </Setting>
-    <Setting Name="refresh" Type="System.Int32" Scope="User">
+    <Setting Name="Volume" Type="System.Double" Scope="User">
       <Value Profile="(Default)">100</Value>
     </Setting>
-    <Setting Name="Voice" Type="System.String" Scope="User">
-      <Value Profile="(Default)" />
+    <Setting Name="PlaybackSpeed" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">100</Value>
+    </Setting>
+    <Setting Name="Stability" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.25</Value>
+    </Setting>
+    <Setting Name="SimilarityBoost" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.85</Value>
+    </Setting>
+    <Setting Name="Style" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.65</Value>
+    </Setting>
+    <Setting Name="UseSpeakerBoost" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="UpgradeRequired" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="SkipOpenAI" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="DanielVoiceId" Type="System.String" Scope="User">
+      <Value Profile="(Default)">yhf80q1381zd2JJQ4tM7</Value>
     </Setting>
   </Settings>
 </SettingsFile>
