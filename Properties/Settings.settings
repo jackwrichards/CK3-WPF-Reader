@@ -35,5 +35,8 @@
     <Setting Name="DanielVoiceId" Type="System.String" Scope="User">
       <Value Profile="(Default)">yhf80q1381zd2JJQ4tM7</Value>
     </Setting>
+    <Setting Name="CustomVoicesJson" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
   </Settings>
 </SettingsFile>

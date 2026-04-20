@@ -394,34 +394,6 @@ namespace CK3_Reader
             _mediaPlayer.Close();
         }
 
-        /// <summary>
-        /// Gets available voices from ElevenLabs API
-        /// </summary>
-        public async Task<string> GetAvailableVoicesAsync()
-        {
-            if (string.IsNullOrWhiteSpace(_apiKey))
-            {
-                throw new InvalidOperationException("ElevenLabs API key is not set");
-            }
-
-            try
-            {
-                var response = await _httpClient.GetAsync($"{API_BASE_URL}/v1/voices");
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    throw new Exception($"ElevenLabs API error: {response.StatusCode} - {errorContent}");
-                }
-
-                return await response.Content.ReadAsStringAsync();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error fetching voices: {ex.Message}", ex);
-            }
-        }
-
         public void Dispose()
         {
             _mediaPlayer?.Close();

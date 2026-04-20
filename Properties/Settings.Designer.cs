@@ -154,5 +154,17 @@ namespace CK3_Reader.Properties {
                 this["DanielVoiceId"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string CustomVoicesJson {
+            get {
+                return ((string)(this["CustomVoicesJson"]));
+            }
+            set {
+                this["CustomVoicesJson"] = value;
+            }
+        }
     }
 }

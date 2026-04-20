@@ -1,5 +1,9 @@
 ﻿using System;
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +28,10 @@ namespace CK3_Reader
         private bool _useSpeakerBoost = true;
         private bool _skipOpenAI = false;
         private string _danielVoiceId = "yhf80q1381zd2JJQ4tM7";
+        
+        // Voice configuration
+        private VoiceConfigCollection _voiceConfig = new VoiceConfigCollection();
+        private ObservableCollection<VoiceConfig> _voices = new ObservableCollection<VoiceConfig>();
         
         string eventText = "";
         string[] formatting = [
@@ -63,6 +71,8 @@ namespace CK3_Reader
             @"skill_\w+",
             @"trait_\w+",
             @"modifier_\w+",
+            @"\bEMP\b",                // EMP formatting code
+            @"\b[A-Z]{2,}\b(?![a-z])", // All-caps words (2+ letters) that aren't followed by lowercase
             
             // Hidden/Special characters (IMPORTANT - add these first!)
             @"[\x00-\x1F\x7F-\x9F]",     // Control characters (non-printable)
@@ -94,7 +104,10 @@ namespace CK3_Reader
             _claudeService = new ClaudeService();
             _elevenLabsService = new ElevenLabsService();
 
-            // Load saved settings
+            // Initialize voice DataGrid
+            voicesDataGrid.ItemsSource = _voices;
+
+            // Load saved settings (including voices)
             LoadSettings();
 
             string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
@@ -174,18 +187,34 @@ namespace CK3_Reader
                 skipOpenAICheckbox.IsChecked = _skipOpenAI;
                 UpdateModeInfo();
 
-                // Load Daniel voice ID setting
-                string savedDanielVoiceId = Properties.Settings.Default.DanielVoiceId;
-                if (!string.IsNullOrWhiteSpace(savedDanielVoiceId))
+                // Load custom voices
+                string savedVoicesJson = Properties.Settings.Default.CustomVoicesJson;
+                if (!string.IsNullOrWhiteSpace(savedVoicesJson))
                 {
-                    _danielVoiceId = savedDanielVoiceId;
-                    txtDanielVoiceId.Text = _danielVoiceId;
-                    DialogueParser.SetDanielVoiceId(_danielVoiceId);
+                    try
+                    {
+                        _voiceConfig = JsonSerializer.Deserialize<VoiceConfigCollection>(savedVoicesJson) ?? new VoiceConfigCollection();
+                    }
+                    catch
+                    {
+                        _voiceConfig = GetDefaultVoices();
+                    }
                 }
                 else
                 {
-                    txtDanielVoiceId.Text = _danielVoiceId;
+                    _voiceConfig = GetDefaultVoices();
                 }
+
+                // Populate the ObservableCollection for the DataGrid
+                _voices.Clear();
+                foreach (var voice in _voiceConfig.Voices)
+                {
+                    _voices.Add(voice);
+                }
+
+                // Update DialogueParser and ClaudeService with voice configuration
+                DialogueParser.UpdateVoiceMapping(_voiceConfig);
+                _claudeService.SetVoiceConfiguration(_voiceConfig);
             }
             catch (Exception ex)
             {
@@ -212,13 +241,52 @@ namespace CK3_Reader
                 Properties.Settings.Default.Style = _style;
                 Properties.Settings.Default.UseSpeakerBoost = _useSpeakerBoost;
                 Properties.Settings.Default.SkipOpenAI = _skipOpenAI;
-                Properties.Settings.Default.DanielVoiceId = _danielVoiceId;
+                
+                // Save custom voices
+                _voiceConfig.Voices = new System.Collections.Generic.List<VoiceConfig>(_voices);
+                string voicesJson = JsonSerializer.Serialize(_voiceConfig);
+                Properties.Settings.Default.CustomVoicesJson = voicesJson;
+                
                 Properties.Settings.Default.Save();
             }
             catch (Exception ex)
             {
                 txtStatus.Text = $"⚠️ Error saving settings: {ex.Message}";
             }
+        }
+
+        private VoiceConfigCollection GetDefaultVoices()
+        {
+            return new VoiceConfigCollection
+            {
+                Voices = new System.Collections.Generic.List<VoiceConfig>
+                {
+                    new VoiceConfig { Name = "Main", VoiceId = "yhf80q1381zd2JJQ4tM7", Gender = "Male", Description = "Narrator/Player - mature male, authoritative" },
+                    new VoiceConfig { Name = "Sarah", VoiceId = "EXAVITQu4vr4xnSDxMaL", Gender = "Female", Description = "Young woman, soft-spoken" },
+                    new VoiceConfig { Name = "Clyde", VoiceId = "2EiwWnXFnvU5JabPnv8n", Gender = "Male", Description = "Middle-aged man, warm" }
+                }
+            };
+        }
+
+        private void UpdateVoiceConfiguration()
+        {
+            // Filter out incomplete voices (skip rows with missing name or voice ID)
+            var validVoices = _voices.Where(v =>
+                !string.IsNullOrWhiteSpace(v.Name) &&
+                !string.IsNullOrWhiteSpace(v.VoiceId)).ToList();
+            
+            _voiceConfig.Voices = validVoices;
+
+            // Silently validate - only check if we have at least 1 male and 1 female among valid voices
+            if (_voiceConfig.IsValid(out string errorMessage))
+            {
+                // Update DialogueParser and ClaudeService only if valid
+                DialogueParser.UpdateVoiceMapping(_voiceConfig);
+                _claudeService.SetVoiceConfiguration(_voiceConfig);
+            }
+
+            // Always save settings (even if validation fails, we save what we have)
+            SaveSettings();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -669,16 +737,132 @@ namespace CK3_Reader
             }
         }
 
-        private void TxtDanielVoiceId_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        private void BtnAddVoice_Click(object sender, RoutedEventArgs e)
         {
-            if (txtDanielVoiceId != null && !_isInitializing)
+            // Add a new empty voice to the collection
+            var newVoice = new VoiceConfig
             {
-                _danielVoiceId = txtDanielVoiceId.Text.Trim();
-                if (!string.IsNullOrWhiteSpace(_danielVoiceId))
+                Name = "NewVoice",
+                VoiceId = "",
+                Gender = "Male"
+            };
+            _voices.Add(newVoice);
+            
+            // Select the new row for editing
+            voicesDataGrid.SelectedItem = newVoice;
+            voicesDataGrid.ScrollIntoView(newVoice);
+        }
+
+        private void BtnRemoveVoice_Click(object sender, RoutedEventArgs e)
+        {
+            if (voicesDataGrid.SelectedItem is VoiceConfig selectedVoice)
+            {
+                // Prevent removing the "Main" voice
+                if (selectedVoice.Name == "Main")
                 {
-                    DialogueParser.SetDanielVoiceId(_danielVoiceId);
-                    SaveSettings();
+                    MessageBox.Show("The 'Main' voice cannot be removed. This is the narrator/player voice and is required.",
+                                  "Cannot Remove Main Voice",
+                                  MessageBoxButton.OK,
+                                  MessageBoxImage.Warning);
+                    return;
                 }
+                
+                // Just remove it - validation will happen silently in UpdateVoiceConfiguration
+                _voices.Remove(selectedVoice);
+                UpdateVoiceConfiguration();
+            }
+        }
+
+        private void BtnResetVoices_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "This will reset all voices to the default configuration. Are you sure?",
+                "Reset Voices",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                _voiceConfig = GetDefaultVoices();
+                _voices.Clear();
+                foreach (var voice in _voiceConfig.Voices)
+                {
+                    _voices.Add(voice);
+                }
+                UpdateVoiceConfiguration();
+            }
+        }
+
+        private async void BtnTestVoice_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button button && button.Tag is VoiceConfig voice)
+            {
+                // Trim whitespace from voice ID
+                string voiceId = voice.VoiceId?.Trim() ?? "";
+                
+                if (string.IsNullOrWhiteSpace(voiceId))
+                {
+                    txtStatus.Text = "⚠️ Cannot test voice - Voice ID is empty";
+                    return;
+                }
+
+                // Update the voice ID in case it had whitespace
+                voice.VoiceId = voiceId;
+
+                string testText = txtTestVoiceText?.Text ?? "Hello! This is a test of the voice.";
+                
+                try
+                {
+                    txtStatus.Text = $"🔊 Testing voice: {voice.Name}...";
+                    await _elevenLabsService.TextToSpeechAsync(testText, voiceId);
+                    txtStatus.Text = $"✔️ Voice test complete: {voice.Name}";
+                }
+                catch (Exception ex)
+                {
+                    // Provide helpful error messages
+                    if (ex.Message.Contains("401") || ex.Message.Contains("403"))
+                    {
+                        txtStatus.Text = "❌ Authentication failed - Check your ElevenLabs API key";
+                    }
+                    else
+                    {
+                        txtStatus.Text = $"❌ Voice test failed: {ex.Message}";
+                    }
+                }
+            }
+        }
+
+        private void VoicesDataGrid_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
+        {
+            // Prevent changing the "Main" voice name
+            if (e.Column.Header.ToString() == "Name" && e.Row.Item is VoiceConfig voice)
+            {
+                var editingElement = e.EditingElement as System.Windows.Controls.TextBox;
+                if (editingElement != null)
+                {
+                    // Find the original voice in the collection
+                    var originalVoice = _voices.FirstOrDefault(v => v == voice);
+                    if (originalVoice != null && originalVoice.Name == "Main" && editingElement.Text != "Main")
+                    {
+                        // Cancel the edit and restore the original value
+                        e.Cancel = true;
+                        MessageBox.Show("The 'Main' voice name cannot be changed. This is the narrator/player voice.",
+                                      "Cannot Rename Main Voice",
+                                      MessageBoxButton.OK,
+                                      MessageBoxImage.Information);
+                        return;
+                    }
+                }
+            }
+            
+            // Update configuration when user finishes editing a cell
+            if (!_isInitializing && !e.Cancel)
+            {
+                // Use Dispatcher to ensure the edit is committed before updating
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    UpdateVoiceConfiguration();
+                }), System.Windows.Threading.DispatcherPriority.Background);
             }
         }
 
@@ -688,6 +872,76 @@ namespace CK3_Reader
             txtStatus.Text = "⏹️ Voice playback stopped";
             txtElevenLabsTtsStatus.Text = "⏹️ Playback stopped by user";
             txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 152, 0));
+        }
+
+        private void BtnResetAllSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "This will reset ALL settings to defaults including:\n\n" +
+                "• API Keys (you'll need to re-enter them)\n" +
+                "• Custom Voices (reset to Main, Sarah, Clyde)\n" +
+                "• Volume and Speed settings\n" +
+                "• Voice quality settings\n" +
+                "• All other preferences\n\n" +
+                "Are you sure you want to continue?",
+                "Reset All Settings",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                try
+                {
+                    // Reset all settings to defaults
+                    Properties.Settings.Default.Reset();
+                    Properties.Settings.Default.Save();
+
+                    // Reset voices to defaults
+                    _voiceConfig = GetDefaultVoices();
+                    _voices.Clear();
+                    foreach (var voice in _voiceConfig.Voices)
+                    {
+                        _voices.Add(voice);
+                    }
+
+                    // Clear API keys from UI
+                    txtApiKey.Password = string.Empty;
+                    txtElevenLabsApiKey.Password = string.Empty;
+
+                    // Reset sliders to defaults
+                    volumeSlider.Value = 100;
+                    speedSlider.Value = 100;
+                    stabilitySlider.Value = 25;
+                    similaritySlider.Value = 85;
+                    styleSlider.Value = 65;
+                    speakerBoostCheckbox.IsChecked = true;
+                    skipOpenAICheckbox.IsChecked = false;
+
+                    // Update services
+                    UpdateVoiceConfiguration();
+
+                    // Update status
+                    txtApiStatus.Text = "⚠️ No API key set";
+                    txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                    txtElevenLabsStatus.Text = "⚠️ No API key set";
+                    txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+
+                    MessageBox.Show(
+                        "All settings have been reset to defaults!\n\n" +
+                        "Please re-enter your API keys to continue using the app.",
+                        "Settings Reset Complete",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Error resetting settings: {ex.Message}",
+                        "Reset Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
+            }
         }
 
         private void DebugModeCheckbox_Changed(object sender, RoutedEventArgs e)

@@ -9,103 +9,113 @@
         Title="CK3 Voice Reader" Height="900" Width="1120" FontSize="16" Closing="Window_closing">
 
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="420"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Top Section: Sidebar and Main Content -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="420"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
         <!-- Left Sidebar -->
         <Border Grid.Column="0" Background="#FF34495E" Padding="15">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                     <!-- Getting Started Section -->
-                    <Border Background="#FF2C3E50" Padding="10" CornerRadius="5" Margin="0,0,0,15">
+                    <Border Background="#FF2C3E50" Padding="8" CornerRadius="5" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="🚀 GETTING STARTED" FontWeight="Bold" FontSize="14" Foreground="White" Margin="0,0,0,10"/>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FFCCCCCC" FontSize="12" Margin="0,0,0,5">
-                                <Run Text="1. Enter your Claude API key below"/>
+                            <TextBlock Text="🚀 SETUP" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,0,0,5"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#FFCCCCCC" FontSize="10" Margin="0,0,0,3">
+                                <Run Text="1. Enter API keys below • 2. Launch CK3 • 3. Trigger event"/>
                             </TextBlock>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FFCCCCCC" FontSize="12" Margin="0,0,0,5">
-                                <Run Text="2. Enter your ElevenLabs API key"/>
-                            </TextBlock>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FFCCCCCC" FontSize="12" Margin="0,0,0,5">
-                                <Run Text="3. Launch CK3 and trigger an event!"/>
-                            </TextBlock>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,5,0,0" FontStyle="Italic">
-                                <Run Text="Get API keys from:"/>
-                                <LineBreak/>
-                                <Run Text="• console.anthropic.com"/>
-                                <LineBreak/>
-                                <Run Text="• elevenlabs.io"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="9" Margin="0,0,0,0" FontStyle="Italic">
+                                <Run Text="Keys: console.anthropic.com • elevenlabs.io"/>
                             </TextBlock>
                         </StackPanel>
                     </Border>
 
-                    <!-- API Keys Section -->
-                    <TextBlock Text="API KEYS" FontWeight="Bold" FontSize="14" Foreground="White" Margin="0,0,0,10"/>
+                    <!-- API Keys Section - Two Column Layout -->
+                    <TextBlock Text="API KEYS" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,0,0,5"/>
                     
-                    <TextBlock Text="Claude API Key:" Foreground="White" FontSize="12" Margin="0,0,0,5"
-                               ToolTip="Your Anthropic Claude API key for AI text processing"/>
-                    <PasswordBox x:Name="txtApiKey" FontSize="12" Margin="0,0,0,10" PasswordChanged="TxtApiKey_PasswordChanged"
-                                 ToolTip="Paste your Claude API key here (starts with 'sk-ant-')"/>
-                    
-                    <TextBlock x:Name="txtApiStatus" Text="⚠️ No API key set" Foreground="#FFFFCC00" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,15"/>
-                    
-                    <TextBlock Text="ElevenLabs API Key:" Foreground="White" FontSize="12" Margin="0,0,0,5"
-                               ToolTip="Your ElevenLabs API key for text-to-speech"/>
-                    <PasswordBox x:Name="txtElevenLabsApiKey" FontSize="12" Margin="0,0,0,10" PasswordChanged="TxtElevenLabsApiKey_PasswordChanged"
-                                 ToolTip="Paste your ElevenLabs API key here"/>
-                    
-                    <TextBlock x:Name="txtElevenLabsStatus" Text="⚠️ No API key set" Foreground="#FFFFCC00" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,15"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Claude API Key Column -->
+                        <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                            <TextBlock Text="Claude" Foreground="White" FontSize="10" Margin="0,0,0,3"/>
+                            <PasswordBox x:Name="txtApiKey" FontSize="10" Margin="0,0,0,3" PasswordChanged="TxtApiKey_PasswordChanged"
+                                         ToolTip="Claude API key (sk-ant-...)"/>
+                            <TextBlock x:Name="txtApiStatus" Text="⚠️ Not set" Foreground="#FFFFCC00" FontSize="9" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        
+                        <!-- ElevenLabs API Key Column -->
+                        <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                            <TextBlock Text="ElevenLabs" Foreground="White" FontSize="10" Margin="0,0,0,3"/>
+                            <PasswordBox x:Name="txtElevenLabsApiKey" FontSize="10" Margin="0,0,0,3" PasswordChanged="TxtElevenLabsApiKey_PasswordChanged"
+                                         ToolTip="ElevenLabs API key"/>
+                            <TextBlock x:Name="txtElevenLabsStatus" Text="⚠️ Not set" Foreground="#FFFFCC00" FontSize="9" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
 
                     <!-- Basic Controls -->
-                    <TextBlock Text="PLAYBACK CONTROLS" FontWeight="Bold" FontSize="14" Foreground="White" Margin="0,10,0,10"/>
+                    <TextBlock Text="PLAYBACK" FontWeight="Bold" FontSize="13" Foreground="White" Margin="0,10,0,8"/>
                     
-                    <TextBlock Text="Volume:" Foreground="White" FontSize="12" Margin="0,0,0,5"
-                               ToolTip="Adjust the volume of the voice playback (0-100%)"/>
-                    <Grid Margin="0,0,0,5">
+                    <!-- Two-column layout for sliders -->
+                    <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Slider x:Name="volumeSlider" Grid.Column="0" Minimum="0" Maximum="100" Value="100"
-                                TickFrequency="10" IsSnapToTickEnabled="True"
-                                VerticalAlignment="Center" Margin="0,0,10,0"
-                                ValueChanged="VolumeSlider_ValueChanged"
-                                ToolTip="Drag to adjust volume"/>
-                        <TextBlock x:Name="volumeLabel" Grid.Column="1" Text="100%" Foreground="White"
-                                   FontSize="11" VerticalAlignment="Center" Width="40"/>
-                    </Grid>
-                    <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                        <Run Text="Controls how loud the voice playback is. 100% = full volume, 0% = muted."/>
-                    </TextBlock>
-                    
-                    <TextBlock Text="Playback Speed:" Foreground="White" FontSize="12" Margin="0,0,0,5"
-                               ToolTip="Adjust how fast the voice speaks (0.5x = slower, 2.0x = faster)"/>
-                    <Grid Margin="0,0,0,5">
-                        <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Slider x:Name="speedSlider" Grid.Column="0" Minimum="50" Maximum="200" Value="100"
-                                TickFrequency="10" IsSnapToTickEnabled="True"
-                                VerticalAlignment="Center" Margin="0,0,10,0"
-                                ValueChanged="SpeedSlider_ValueChanged"
-                                ToolTip="Drag to adjust speed (1.0x = normal)"/>
-                        <TextBlock x:Name="speedLabel" Grid.Column="1" Text="1.0x" Foreground="White"
-                                   FontSize="11" VerticalAlignment="Center" Width="40"/>
+                        
+                        <!-- Volume Column -->
+                        <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                            <TextBlock Text="Volume" Foreground="White" FontSize="11" Margin="0,0,0,3"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="volumeSlider" Grid.Column="0" Minimum="0" Maximum="100" Value="100"
+                                        TickFrequency="10" IsSnapToTickEnabled="True"
+                                        VerticalAlignment="Center" Margin="0,0,5,0"
+                                        ValueChanged="VolumeSlider_ValueChanged"/>
+                                <TextBlock x:Name="volumeLabel" Grid.Column="1" Text="100%" Foreground="White"
+                                           FontSize="10" VerticalAlignment="Center" Width="35"/>
+                            </Grid>
+                        </StackPanel>
+                        
+                        <!-- Speed Column -->
+                        <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                            <TextBlock Text="Speed" Foreground="White" FontSize="11" Margin="0,0,0,3"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Slider x:Name="speedSlider" Grid.Column="0" Minimum="50" Maximum="200" Value="100"
+                                        TickFrequency="10" IsSnapToTickEnabled="True"
+                                        VerticalAlignment="Center" Margin="0,0,5,0"
+                                        ValueChanged="SpeedSlider_ValueChanged"/>
+                                <TextBlock x:Name="speedLabel" Grid.Column="1" Text="1.0x" Foreground="White"
+                                           FontSize="10" VerticalAlignment="Center" Width="35"/>
+                            </Grid>
+                        </StackPanel>
                     </Grid>
-                    <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                        <Run Text="Changes how fast the voice speaks. 1.0x = normal speed, 0.5x = half speed (slower), 2.0x = double speed (faster)."/>
-                    </TextBlock>
                     
                     <Button x:Name="btnStopVoice" Content="⏹️ Stop Voice"
-                            FontSize="12" FontWeight="Bold"
+                            FontSize="11" FontWeight="Bold"
                             Background="#FFE74C3C" Foreground="White"
-                            Padding="10,8,10,8" Margin="0,0,0,5"
+                            Padding="8,5" Margin="0,0,0,10"
                             BorderThickness="0" Cursor="Hand"
                             Click="BtnStopVoice_Click"
-                            ToolTip="Stop the currently playing voice">
+                            ToolTip="Stop currently playing voice">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="#FFE74C3C"/>
@@ -117,119 +127,117 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,15">
-                        <Run Text="Immediately stops any voice that is currently playing. Useful if you want to skip to the next event."/>
-                    </TextBlock>
 
                     <!-- Advanced Settings Expander -->
-                    <Expander Header="⚙️ ADVANCED SETTINGS" Foreground="White" FontWeight="Bold" FontSize="13" Margin="0,10,0,10" IsExpanded="False">
-                        <StackPanel Margin="0,10,0,0">
+                    <Expander Header="⚙️ ADVANCED" Foreground="White" FontWeight="Bold" FontSize="12" Margin="0,5,0,5" IsExpanded="False">
+                        <StackPanel Margin="0,8,0,0">
                             
                             <!-- Processing Mode -->
-                            <TextBlock Text="Processing Mode:" Foreground="White" FontSize="12" Margin="0,0,0,5"
-                                       ToolTip="Choose how events are processed"/>
-                            <CheckBox x:Name="skipOpenAICheckbox" Content="Fast Mode (Skip AI Processing)"
-                                      Foreground="White" FontSize="11" Margin="0,0,0,5"
+                            <CheckBox x:Name="skipOpenAICheckbox" Content="⚡ Fast Mode (Skip AI)"
+                                      Foreground="White" FontSize="10" Margin="0,0,0,8"
                                       IsChecked="False" Checked="SkipOpenAICheckbox_Changed" Unchecked="SkipOpenAICheckbox_Changed"
-                                      ToolTip="Enable for faster processing without Claude AI enhancement. Uses ElevenLabs Flash v2.5 directly."/>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,15">
-                                <Run Text="When enabled, skips Claude AI processing and sends text directly to ElevenLabs Flash v2.5. Faster but less dramatic/expressive. Disable for multi-speaker dialogue with emotion tags."/>
-                            </TextBlock>
+                                      ToolTip="Skip Claude AI, use ElevenLabs Flash v2.5 directly (faster, less expressive)"/>
                             
-                            <!-- Voice Quality Settings -->
-                            <TextBlock Text="VOICE QUALITY" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,10,0,10"/>
+                            <!-- Voice Quality Settings - Two Column Layout -->
+                            <TextBlock Text="VOICE QUALITY" FontWeight="Bold" FontSize="11" Foreground="White" Margin="0,5,0,5"/>
                             
-                            <TextBlock Text="Stability:" Foreground="White" FontSize="11" Margin="0,0,0,5"
-                                       ToolTip="Higher = more consistent voice, Lower = more expressive (0.0-1.0)"/>
+                            <!-- Row 1: Stability and Similarity -->
                             <Grid Margin="0,0,0,5">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="stabilitySlider" Grid.Column="0" Minimum="0" Maximum="100" Value="25"
-                                        TickFrequency="5" IsSnapToTickEnabled="True"
-                                        VerticalAlignment="Center" Margin="0,0,10,0"
-                                        ValueChanged="StabilitySlider_ValueChanged"
-                                        ToolTip="Recommended: 0.25 for maximum realism and expressiveness"/>
-                                <TextBlock x:Name="stabilityLabel" Grid.Column="1" Text="0.25" Foreground="White"
-                                           FontSize="11" VerticalAlignment="Center" Width="40"/>
-                            </Grid>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                                <Run Text="Controls voice consistency. Higher values (0.7-1.0) = more predictable and stable voice. Lower values (0.0-0.4) = more varied and expressive. Recommended: 0.25 for MAXIMUM realism and human-like variation."/>
-                            </TextBlock>
-                            
-                            <TextBlock Text="Similarity Boost:" Foreground="White" FontSize="11" Margin="0,0,0,5"
-                                       ToolTip="Higher = closer to original voice, Lower = more creative (0.0-1.0)"/>
-                            <Grid Margin="0,0,0,5">
-                                <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <Slider x:Name="similaritySlider" Grid.Column="0" Minimum="0" Maximum="100" Value="85"
-                                        TickFrequency="5" IsSnapToTickEnabled="True"
-                                        VerticalAlignment="Center" Margin="0,0,10,0"
-                                        ValueChanged="SimilaritySlider_ValueChanged"
-                                        ToolTip="Recommended: 0.85 for maximum voice clarity"/>
-                                <TextBlock x:Name="similarityLabel" Grid.Column="1" Text="0.85" Foreground="White"
-                                           FontSize="11" VerticalAlignment="Center" Width="40"/>
+                                
+                                <!-- Stability -->
+                                <StackPanel Grid.Column="0" Margin="0,0,5,0">
+                                    <TextBlock Text="Stability" Foreground="White" FontSize="10" Margin="0,0,0,2"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="stabilitySlider" Grid.Column="0" Minimum="0" Maximum="100" Value="25"
+                                                TickFrequency="5" IsSnapToTickEnabled="True"
+                                                VerticalAlignment="Center" Margin="0,0,5,0"
+                                                ValueChanged="StabilitySlider_ValueChanged"
+                                                ToolTip="Lower = more expressive (Rec: 0.25)"/>
+                                        <TextBlock x:Name="stabilityLabel" Grid.Column="1" Text="0.25" Foreground="White"
+                                                   FontSize="9" VerticalAlignment="Center" Width="30"/>
+                                    </Grid>
+                                </StackPanel>
+                                
+                                <!-- Similarity -->
+                                <StackPanel Grid.Column="1" Margin="5,0,0,0">
+                                    <TextBlock Text="Similarity" Foreground="White" FontSize="10" Margin="0,0,0,2"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="similaritySlider" Grid.Column="0" Minimum="0" Maximum="100" Value="85"
+                                                TickFrequency="5" IsSnapToTickEnabled="True"
+                                                VerticalAlignment="Center" Margin="0,0,5,0"
+                                                ValueChanged="SimilaritySlider_ValueChanged"
+                                                ToolTip="Higher = clearer voice (Rec: 0.85)"/>
+                                        <TextBlock x:Name="similarityLabel" Grid.Column="1" Text="0.85" Foreground="White"
+                                                   FontSize="9" VerticalAlignment="Center" Width="30"/>
+                                    </Grid>
+                                </StackPanel>
                             </Grid>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                                <Run Text="Enhances similarity to the original voice. Higher values (0.7-1.0) = stays closer to the voice's natural sound. Lower values (0.0-0.3) = more creative interpretation. Recommended: 0.85 for MAXIMUM clarity and natural sound."/>
-                            </TextBlock>
                             
-                            <TextBlock Text="Style/Expressiveness:" Foreground="White" FontSize="11" Margin="0,0,0,5"
-                                       ToolTip="Higher = more dramatic and expressive (0.0-1.0)"/>
-                            <Grid Margin="0,0,0,5">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Slider x:Name="styleSlider" Grid.Column="0" Minimum="0" Maximum="100" Value="65"
-                                        TickFrequency="5" IsSnapToTickEnabled="True"
-                                        VerticalAlignment="Center" Margin="0,0,10,0"
-                                        ValueChanged="StyleSlider_ValueChanged"
-                                        ToolTip="Recommended: 0.65 for maximum emotional realism"/>
-                                <TextBlock x:Name="styleLabel" Grid.Column="1" Text="0.65" Foreground="White"
-                                           FontSize="11" VerticalAlignment="Center" Width="40"/>
-                            </Grid>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                                <Run Text="Controls how expressive and dramatic the voice is. 0.0 = neutral/flat delivery. 0.5 = natural emotion. 0.7-1.0 = very theatrical. Recommended: 0.65 for MAXIMUM emotional realism - voices will sound like they're truly experiencing the events!"/>
-                            </TextBlock>
+                            <!-- Row 2: Style -->
+                            <StackPanel Margin="0,0,0,5">
+                                <TextBlock Text="Style/Expressiveness" Foreground="White" FontSize="10" Margin="0,0,0,2"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="styleSlider" Grid.Column="0" Minimum="0" Maximum="100" Value="65"
+                                            TickFrequency="5" IsSnapToTickEnabled="True"
+                                            VerticalAlignment="Center" Margin="0,0,10,0"
+                                            ValueChanged="StyleSlider_ValueChanged"
+                                            ToolTip="Higher = more dramatic (Rec: 0.65)"/>
+                                    <TextBlock x:Name="styleLabel" Grid.Column="1" Text="0.65" Foreground="White"
+                                               FontSize="9" VerticalAlignment="Center" Width="30"/>
+                                </Grid>
+                            </StackPanel>
                             
-                            <CheckBox x:Name="speakerBoostCheckbox" Content="Use Speaker Boost"
-                                      Foreground="White" FontSize="11" Margin="0,0,0,5"
+                            <CheckBox x:Name="speakerBoostCheckbox" Content="Speaker Boost (Multi-Speaker Clarity)"
+                                      Foreground="White" FontSize="10" Margin="0,0,0,5"
                                       IsChecked="True" Checked="SpeakerBoostCheckbox_Changed" Unchecked="SpeakerBoostCheckbox_Changed"
-                                      ToolTip="Enhances voice clarity for multi-speaker dialogue (recommended: ON)"/>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,15">
-                                <Run Text="Boosts voice clarity and distinction when multiple speakers are in the same dialogue. Recommended: Keep ON for better multi-speaker conversations."/>
-                            </TextBlock>
-                            
-                            <!-- Voice Customization -->
-                            <TextBlock Text="VOICE CUSTOMIZATION" FontWeight="Bold" FontSize="12" Foreground="White" Margin="0,10,0,10"/>
-                            
-                            <TextBlock Text="Narrator Voice ID:" Foreground="White" FontSize="11" Margin="0,0,0,5"
-                                       ToolTip="ElevenLabs voice ID for the main narrator (Daniel by default)"/>
-                            <TextBox x:Name="txtDanielVoiceId" FontSize="11" Margin="0,0,0,5"
-                                     ToolTip="Enter a custom ElevenLabs voice ID or leave default"
-                                     TextChanged="TxtDanielVoiceId_TextChanged"/>
-                            <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,15">
-                                <Run Text="The ElevenLabs voice ID used for the main narrator (Daniel). You can replace this with any ElevenLabs voice ID from your account. Also used in Fast Mode."/>
-                            </TextBlock>
-                            
+                                      ToolTip="Enhances voice clarity for multi-speaker dialogue"/>
                         </StackPanel>
                     </Expander>
 
                     <!-- Debug Mode Toggle -->
-                    <CheckBox x:Name="debugModeCheckbox" Content="🐛 Debug Mode (Show Technical Details)"
-                              Foreground="White" FontSize="11" Margin="0,15,0,5"
+                    <CheckBox x:Name="debugModeCheckbox" Content="🐛 Debug Mode"
+                              Foreground="White" FontSize="10" Margin="0,10,0,5"
                               IsChecked="False" Checked="DebugModeCheckbox_Changed" Unchecked="DebugModeCheckbox_Changed"
-                              ToolTip="Show raw logs, cleaned text, and parsed dialogue for troubleshooting"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="#FF95A5A6" FontSize="11" Margin="0,0,0,10">
-                        <Run Text="Shows technical details like raw CK3 logs, cleaned text, AI translation, and parsed dialogue. Useful for troubleshooting voice issues or understanding how the app processes events."/>
-                    </TextBlock>
+                              ToolTip="Show raw logs, cleaned text, and parsed dialogue"/>
                     
-                    <TextBlock x:Name="txtModeInfo" TextWrapping="Wrap" Text="Events will be automatically processed with Claude and played via ElevenLabs TTS. Settings are saved automatically."
-                               FontSize="11" Foreground="#FFCCCCCC" Margin="0,0,0,10"/>
+                    <TextBlock x:Name="txtModeInfo" TextWrapping="Wrap" Text="Settings saved automatically."
+                               FontSize="10" Foreground="#FF95A5A6" Margin="0,0,0,8"/>
+                    
+                    <!-- Reset All Settings Button -->
+                    <Button x:Name="btnResetAllSettings" Content="🔄 Reset All Settings"
+                            FontSize="10" FontWeight="Bold"
+                            Background="#FFE67E22" Foreground="White"
+                            Padding="8,5" Margin="0,0,0,5"
+                            BorderThickness="0" Cursor="Hand"
+                            Click="BtnResetAllSettings_Click"
+                            ToolTip="⚠️ Reset ALL settings (API keys, voices, preferences)">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#FFE67E22"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFD35400"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -305,5 +313,110 @@
                 </StackPanel>
             </ScrollViewer>
         </Grid>
+        </Grid>
+        
+        <!-- Bottom Section: Voice Configuration (Full Width) -->
+        <Border Grid.Row="1" Background="#FF2C3E50" Padding="15,10" BorderBrush="#FF1A252F" BorderThickness="0,2,0,0">
+            <StackPanel>
+                <TextBlock Text="🎤 CUSTOM VOICES" FontWeight="Bold" FontSize="13" Foreground="White" Margin="0,0,0,5"/>
+                
+                <!-- Voice List DataGrid -->
+                <DataGrid x:Name="voicesDataGrid"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          Height="220"
+                          Margin="0,0,0,8"
+                          Background="White"
+                          HeadersVisibility="Column"
+                          CellEditEnding="VoicesDataGrid_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="120"/>
+                        <DataGridTextColumn Header="Voice ID" Binding="{Binding VoiceId}" Width="200"/>
+                        <DataGridComboBoxColumn Header="Gender" SelectedItemBinding="{Binding Gender}" Width="80">
+                            <DataGridComboBoxColumn.ElementStyle>
+                                <Style TargetType="ComboBox">
+                                    <Setter Property="ItemsSource">
+                                        <Setter.Value>
+                                            <x:Array Type="sys:String" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                                                <sys:String>Male</sys:String>
+                                                <sys:String>Female</sys:String>
+                                            </x:Array>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </DataGridComboBoxColumn.ElementStyle>
+                            <DataGridComboBoxColumn.EditingElementStyle>
+                                <Style TargetType="ComboBox">
+                                    <Setter Property="ItemsSource">
+                                        <Setter.Value>
+                                            <x:Array Type="sys:String" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                                                <sys:String>Male</sys:String>
+                                                <sys:String>Female</sys:String>
+                                            </x:Array>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </DataGridComboBoxColumn.EditingElementStyle>
+                        </DataGridComboBoxColumn>
+                        <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                        <DataGridTemplateColumn Header="Test" Width="60">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="🔊"
+                                            FontSize="10"
+                                            Padding="5,2"
+                                            Background="#FF3498DB"
+                                            Foreground="White"
+                                            BorderThickness="0"
+                                            Click="BtnTestVoice_Click"
+                                            Tag="{Binding}"
+                                            ToolTip="Test this voice"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                
+                <!-- Bottom Controls Row -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Voice Management Buttons -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,15,0">
+                        <Button x:Name="btnAddVoice" Content="➕ Add"
+                                FontSize="10" Padding="8,4" Margin="0,0,4,0"
+                                Background="#FF27AE60" Foreground="White" BorderThickness="0"
+                                Click="BtnAddVoice_Click"
+                                ToolTip="Add a new custom voice"/>
+                        <Button x:Name="btnRemoveVoice" Content="➖ Remove"
+                                FontSize="10" Padding="8,4" Margin="0,0,4,0"
+                                Background="#FFE74C3C" Foreground="White" BorderThickness="0"
+                                Click="BtnRemoveVoice_Click"
+                                ToolTip="Remove the selected voice"/>
+                        <Button x:Name="btnResetVoices" Content="🔄 Reset"
+                                FontSize="10" Padding="8,4"
+                                Background="#FF95A5A6" Foreground="White" BorderThickness="0"
+                                Click="BtnResetVoices_Click"
+                                ToolTip="Reset to default voice configuration"/>
+                    </StackPanel>
+                    
+                    <!-- Test Text Input -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock Text="Test:" Foreground="White" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox x:Name="txtTestVoiceText"
+                                 FontSize="10"
+                                 Width="350"
+                                 VerticalAlignment="Center"
+                                 Text="Hello! This is a test of the voice."
+                                 ToolTip="Enter text to test voices with"/>
+                        <TextBlock Text="Min: 1 male + 1 female" Foreground="#FF95A5A6" FontSize="10" VerticalAlignment="Center" Margin="15,0,0,0" FontStyle="Italic"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

@@ -9,43 +9,31 @@ namespace CK3_Reader
     /// </summary>
     public class DialogueParser
     {
-        // Mapping of voice names to ElevenLabs voice IDs
-        private static Dictionary<string, string> VoiceIdMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // Male voices
-            { "Adam", "pNInz6obpgDQGcFmaJgB" },
-            { "Bill", "pqHfZKP75CvOlQylNhV4" },
-            { "Brian", "nPczCjzI2devNBz1zQrb" },
-            { "Callum", "N2lVS1w4EtoT3dr4eOWO" },
-            { "Charlie", "IKne3meq5aSn9XLyUdCD" },
-            { "Chris", "iP95p4xoKVk53GoZ742B" },
-            { "Daniel", "yhf80q1381zd2JJQ4tM7" }, // main person - can be changed via settings
-            { "Eric", "cjVigY5qzO86Huf0OWal" },
-            { "George", "JBFqnCBsd6RMkjVDRZzb" },
-            { "Harry", "SOYHLrjzK2X1ezoPC6cr" },
-            { "Liam", "TX3LPaxmHKxFdv7VOQHJ" },
-            { "Roger", "CwhRBWXzGAHq8TQ4Fs17" },
-            { "Will", "bIHbv24MWmeRgasZH58o" },
-            
-            // Female voices
-            { "Alice", "Xb7hH8MSUJpSbSDYk0k2" },
-            { "Jessica", "cgSgspJ2msm6clMCkdW9" },
-            { "Laura", "FGY2WhTYpPnrIDTdsKH5" },
-            { "Lily", "pFZP5JQG7iQjIQuC4Bku" },
-            { "Matilda", "XrExE9yKIg1WjnnlVkGX" },
-            { "River", "SAz9YHcvj6GT2YYXdXww" },
-            { "Sarah", "EXAVITQu4vr4xnSDxMaL" }
-        };
+        // Dynamic mapping of voice names to ElevenLabs voice IDs
+        private static Dictionary<string, string> VoiceIdMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Updates the voice ID for Daniel
+        /// Updates the voice mapping from a VoiceConfigCollection
         /// </summary>
-        public static void SetDanielVoiceId(string voiceId)
+        public static void UpdateVoiceMapping(VoiceConfigCollection voiceConfig)
         {
-            if (!string.IsNullOrWhiteSpace(voiceId))
+            VoiceIdMap.Clear();
+            
+            foreach (var voice in voiceConfig.Voices)
             {
-                VoiceIdMap["Daniel"] = voiceId;
+                if (!string.IsNullOrWhiteSpace(voice.Name) && !string.IsNullOrWhiteSpace(voice.VoiceId))
+                {
+                    VoiceIdMap[voice.Name] = voice.VoiceId;
+                }
             }
+        }
+
+        /// <summary>
+        /// Gets the current voice mapping
+        /// </summary>
+        public static Dictionary<string, string> GetVoiceMapping()
+        {
+            return new Dictionary<string, string>(VoiceIdMap, StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -156,9 +144,9 @@ namespace CK3_Reader
         /// </summary>
         public static ElevenLabsDialogue ConvertToElevenLabsFormat(
             List<DialogueEntry> entries,
-            double stability = 0.5,
-            double similarityBoost = 0.75,
-            double style = 0.0,
+            double stability = 0.25,
+            double similarityBoost = 0.85,
+            double style = 0.65,
             bool useSpeakerBoost = true)
         {
             var dialogue = new ElevenLabsDialogue
@@ -175,9 +163,16 @@ namespace CK3_Reader
 
             foreach (var entry in entries)
             {
+                // Skip entries with empty or whitespace-only text
+                if (string.IsNullOrWhiteSpace(entry.Text))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DialogueParser] Skipping entry with empty text for voice: {entry.VoiceName}");
+                    continue;
+                }
+                
                 dialogue.Inputs.Add(new DialogueInput
                 {
-                    Text = entry.Text,
+                    Text = entry.Text.Trim(),
                     VoiceId = entry.VoiceId
                 });
             }
@@ -192,8 +187,13 @@ namespace CK3_Reader
         {
             if (string.IsNullOrWhiteSpace(speakerName))
             {
-                // Default to Adam if no name provided
-                return VoiceIdMap["Adam"];
+                // Default to Main (narrator) or first available voice if no name provided
+                if (VoiceIdMap.TryGetValue("Main", out var mainVoice))
+                {
+                    return mainVoice;
+                }
+                // Fallback to first available voice
+                return VoiceIdMap.Values.FirstOrDefault() ?? "pNInz6obpgDQGcFmaJgB";
             }
 
             // Try exact match first
@@ -202,8 +202,13 @@ namespace CK3_Reader
                 return voiceId;
             }
 
-            // If not found, default to Adam
-            return VoiceIdMap["Adam"];
+            // If not found, default to Main (narrator) or first available voice
+            if (VoiceIdMap.TryGetValue("Main", out var fallbackVoice))
+            {
+                return fallbackVoice;
+            }
+            // Fallback to first available voice
+            return VoiceIdMap.Values.FirstOrDefault() ?? "pNInz6obpgDQGcFmaJgB";
         }
 
         /// <summary>
