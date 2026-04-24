@@ -8,7 +8,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace CK3_Reader
 {
@@ -21,13 +23,15 @@ namespace CK3_Reader
         // Flag to prevent saving during initialization
         private bool _isInitializing = true;
         
-        // Voice quality settings
+        // Loading indicator animation
+        private DispatcherTimer? _loadingTimer;
+        private int _loadingDots = 0;
+        
+        // Voice quality settings (kept for internal use)
         private double _stability = 0.5;
         private double _similarityBoost = 0.75;
         private double _style = 0.0;
         private bool _useSpeakerBoost = true;
-        private bool _skipOpenAI = false;
-        private string _danielVoiceId = "yhf80q1381zd2JJQ4tM7";
         
         // Voice configuration
         private VoiceConfigCollection _voiceConfig = new VoiceConfigCollection();
@@ -103,9 +107,19 @@ namespace CK3_Reader
             InitializeComponent();
             _claudeService = new ClaudeService();
             _elevenLabsService = new ElevenLabsService();
-
-            // Initialize voice DataGrid
-            voicesDataGrid.ItemsSource = _voices;
+            
+            // Hook up playback progress callback
+            _elevenLabsService.OnPlaybackProgress = OnAudioPlaybackProgress;
+            
+            // Initialize loading indicator timer
+            _loadingTimer = new DispatcherTimer();
+            _loadingTimer.Interval = TimeSpan.FromMilliseconds(500);
+            _loadingTimer.Tick += LoadingTimer_Tick;
+            
+            // Initialize voice configuration with defaults
+            _voiceConfig = GetDefaultVoices();
+            DialogueParser.UpdateVoiceMapping(_voiceConfig);
+            _claudeService.SetVoiceConfiguration(_voiceConfig);
 
             // Load saved settings (including voices)
             LoadSettings();
@@ -116,17 +130,28 @@ namespace CK3_Reader
 
             if (File.Exists(debugLog))
             {
-                txtStatus.Text = "✔️ Ready - Monitoring CK3 debug.log";
+                SetStatus("Ready", false);
             }
             else
             {
-                txtStatus.Text = "❌ CK3 debug.log not found at: " + debugLog;
+                SetStatus("Error - CK3 debug.log not found", false);
             }
 
             // Mark initialization as complete
             _isInitializing = false;
 
             Loaded += MainWindow_Loaded;
+        }
+
+        /// <summary>
+        /// Callback for audio playback progress updates
+        /// </summary>
+        private void OnAudioPlaybackProgress(double currentSeconds, double totalSeconds)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                SetStatus("Playing audio", true);
+            });
         }
 
         private void LoadSettings()
@@ -139,7 +164,7 @@ namespace CK3_Reader
                 {
                     txtApiKey.Password = savedApiKey;
                     _claudeService.SetApiKey(savedApiKey);
-                    txtApiStatus.Text = "✔️ API key set - Auto-processing enabled";
+                    txtApiStatus.Text = "✔️ API key set";
                     txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
                 }
 
@@ -149,7 +174,7 @@ namespace CK3_Reader
                 {
                     txtElevenLabsApiKey.Password = savedElevenLabsKey;
                     _elevenLabsService.SetApiKey(savedElevenLabsKey);
-                    txtElevenLabsStatus.Text = "✔️ API key set - TTS enabled";
+                    txtElevenLabsStatus.Text = "✔️ API key set";
                     txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
                 }
 
@@ -168,57 +193,10 @@ namespace CK3_Reader
                     speedSlider.Value = savedSpeed;
                     _elevenLabsService.SetSpeed(savedSpeed / 100.0);
                 }
-
-                // Load voice quality settings
-                _stability = Properties.Settings.Default.Stability;
-                stabilitySlider.Value = _stability * 100;
-                
-                _similarityBoost = Properties.Settings.Default.SimilarityBoost;
-                similaritySlider.Value = _similarityBoost * 100;
-                
-                _style = Properties.Settings.Default.Style;
-                styleSlider.Value = _style * 100;
-                
-                _useSpeakerBoost = Properties.Settings.Default.UseSpeakerBoost;
-                speakerBoostCheckbox.IsChecked = _useSpeakerBoost;
-
-                // Load skip OpenAI setting
-                _skipOpenAI = Properties.Settings.Default.SkipOpenAI;
-                skipOpenAICheckbox.IsChecked = _skipOpenAI;
-                UpdateModeInfo();
-
-                // Load custom voices
-                string savedVoicesJson = Properties.Settings.Default.CustomVoicesJson;
-                if (!string.IsNullOrWhiteSpace(savedVoicesJson))
-                {
-                    try
-                    {
-                        _voiceConfig = JsonSerializer.Deserialize<VoiceConfigCollection>(savedVoicesJson) ?? new VoiceConfigCollection();
-                    }
-                    catch
-                    {
-                        _voiceConfig = GetDefaultVoices();
-                    }
-                }
-                else
-                {
-                    _voiceConfig = GetDefaultVoices();
-                }
-
-                // Populate the ObservableCollection for the DataGrid
-                _voices.Clear();
-                foreach (var voice in _voiceConfig.Voices)
-                {
-                    _voices.Add(voice);
-                }
-
-                // Update DialogueParser and ClaudeService with voice configuration
-                DialogueParser.UpdateVoiceMapping(_voiceConfig);
-                _claudeService.SetVoiceConfiguration(_voiceConfig);
             }
             catch (Exception ex)
             {
-                txtStatus.Text = $"⚠️ Error loading settings: {ex.Message}";
+                SetStatus($"Error - {ex.Message}", false);
             }
         }
 
@@ -232,26 +210,17 @@ namespace CK3_Reader
 
             try
             {
+                // Only save user-configurable settings
                 Properties.Settings.Default.OpenAIApiKey = txtApiKey.Password;
                 Properties.Settings.Default.ElevenLabsApiKey = txtElevenLabsApiKey.Password;
                 Properties.Settings.Default.Volume = volumeSlider.Value;
                 Properties.Settings.Default.PlaybackSpeed = speedSlider.Value;
-                Properties.Settings.Default.Stability = _stability;
-                Properties.Settings.Default.SimilarityBoost = _similarityBoost;
-                Properties.Settings.Default.Style = _style;
-                Properties.Settings.Default.UseSpeakerBoost = _useSpeakerBoost;
-                Properties.Settings.Default.SkipOpenAI = _skipOpenAI;
-                
-                // Save custom voices
-                _voiceConfig.Voices = new System.Collections.Generic.List<VoiceConfig>(_voices);
-                string voicesJson = JsonSerializer.Serialize(_voiceConfig);
-                Properties.Settings.Default.CustomVoicesJson = voicesJson;
                 
                 Properties.Settings.Default.Save();
             }
             catch (Exception ex)
             {
-                txtStatus.Text = $"⚠️ Error saving settings: {ex.Message}";
+                SetStatus($"Error - {ex.Message}", false);
             }
         }
 
@@ -261,33 +230,46 @@ namespace CK3_Reader
             {
                 Voices = new System.Collections.Generic.List<VoiceConfig>
                 {
-                    new VoiceConfig { Name = "Main", VoiceId = "yhf80q1381zd2JJQ4tM7", Gender = "Male", Description = "Narrator/Player - mature male, authoritative" },
-                    new VoiceConfig { Name = "Sarah", VoiceId = "EXAVITQu4vr4xnSDxMaL", Gender = "Female", Description = "Young woman, soft-spoken" },
-                    new VoiceConfig { Name = "Clyde", VoiceId = "2EiwWnXFnvU5JabPnv8n", Gender = "Male", Description = "Middle-aged man, warm" }
+                    // Main narrator voice
+                    new VoiceConfig { Name = "Main", VoiceId = "goT3UYdM9bhm0n2lmKQx", Gender = "Male", Description = "Narrator - bold, authoritative male" },
+                    
+                    // Female voices
+                    new VoiceConfig { Name = "Seraphina", VoiceId = "4tRn1lSkEn13EVTuqb0g", Gender = "Female", Description = "Seductive, alluring woman" },
+                    new VoiceConfig { Name = "Elara", VoiceId = "WtA85syCrJwasGeHGH2p", Gender = "Female", Description = "Happy, cheerful woman" },
+                    new VoiceConfig { Name = "Isolde", VoiceId = "nDJIICjR9zfJExIFeSCN", Gender = "Female", Description = "Normal, neutral woman" },
+                    new VoiceConfig { Name = "Lyra", VoiceId = "pPdl9cQBQq4p6mRkZy2Z", Gender = "Female", Description = "Young girl, child" },
+                    new VoiceConfig { Name = "Morgana", VoiceId = "si0svtk05vPEuvwAW93c", Gender = "Female", Description = "Angry, stern woman" },
+                    new VoiceConfig { Name = "Eldara", VoiceId = "USEQXnsXRJlw2k9LUzG4", Gender = "Female", Description = "Wise old woman, sage" },
+                    new VoiceConfig { Name = "Quirina", VoiceId = "eppqEXVumQ3CfdndcIBd", Gender = "Female", Description = "Odd, eccentric woman" },
+                    new VoiceConfig { Name = "Ravenna", VoiceId = "flHkNRp1BlvT73UL6gyz", Gender = "Female", Description = "Villainous woman, scheming" },
+                    
+                    // Male voices
+                    new VoiceConfig { Name = "Theron", VoiceId = "IRHApOXLvnW57QJPQH2P", Gender = "Male", Description = "Deep, commanding male" },
+                    new VoiceConfig { Name = "Malachar", VoiceId = "2gPFXx8pN3Avh27Dw5Ma", Gender = "Male", Description = "Evil, quiet menace" },
+                    new VoiceConfig { Name = "Gorath", VoiceId = "6sFKzaJr574YWVu4UuJF", Gender = "Male", Description = "Deep, bold warrior" },
+                    new VoiceConfig { Name = "Draven", VoiceId = "cPoqAvGWCPfCfyPMwe4z", Gender = "Male", Description = "Evil, deep villain" },
+                    new VoiceConfig { Name = "Pip", VoiceId = "zYcjlYFOd3taleS0gkk3", Gender = "Male", Description = "Silly, animated jester" },
+                    new VoiceConfig { Name = "Edmund", VoiceId = "2ajXGJNYBR0iNHpS4VZb", Gender = "Male", Description = "Normal, everyday man" },
+                    new VoiceConfig { Name = "Borin", VoiceId = "DGzg6RaUqxGRTHSBjfgF", Gender = "Male", Description = "Loud, yelling warrior" },
+                    new VoiceConfig { Name = "Aldric", VoiceId = "fbIG6gEosVIM95R5qOna", Gender = "Male", Description = "Elderly man, aged" },
+                    new VoiceConfig { Name = "Percival", VoiceId = "7cOBG34AiHrAzs842Rdi", Gender = "Male", Description = "Posh, refined nobleman" },
+                    new VoiceConfig { Name = "Mortis", VoiceId = "wXvR48IpOq9HACltTmt7", Gender = "Male", Description = "Ancient, sinister elder" },
+                    new VoiceConfig { Name = "Whisper", VoiceId = "3SF4rB1fGBMXU9xRM7pz", Gender = "Male", Description = "Whispering evil presence" },
+                    new VoiceConfig { Name = "Vex", VoiceId = "xYWUvKNK6zWCgsdAK7Wi", Gender = "Male", Description = "Evil, malevolent" },
+                    new VoiceConfig { Name = "Gribble", VoiceId = "Z7RrOqZFTyLpIlzCgfsp", Gender = "Male", Description = "Goblin-like, raspy" },
+                    new VoiceConfig { Name = "Grumwald", VoiceId = "MKlLqCItoCkvdhrxgtLv", Gender = "Male", Description = "Cranky old man" },
+                    new VoiceConfig { Name = "Barnaby", VoiceId = "BBfN7Spa3cqLPH1xAS22", Gender = "Male", Description = "Kindly old man" },
+                    new VoiceConfig { Name = "Rollo", VoiceId = "LG95yZDEHg6fCZdQjLqj", Gender = "Male", Description = "Loud, boisterous" },
+                    new VoiceConfig { Name = "Maleficus", VoiceId = "bwCXcoVxWNYMlC6Esa8u", Gender = "Male", Description = "Deeply evil ancient" },
+                    new VoiceConfig { Name = "Jester", VoiceId = "dHd5gvgSOzSfduK4CvEg", Gender = "Male", Description = "Silly, playful fool" },
+                    new VoiceConfig { Name = "Oddwin", VoiceId = "yjJ45q8TVCrtMhEKurxY", Gender = "Male", Description = "Odd, peculiar man" },
+                    new VoiceConfig { Name = "Chill", VoiceId = "Xb3zeLrTi6F4ziIcXdwk", Gender = "Male", Description = "Relaxed, laid-back" },
+                    new VoiceConfig { Name = "Scarface", VoiceId = "9yzdeviXkFddZ4Oz8Mok", Gender = "Male", Description = "Battle-scarred veteran" },
+                    new VoiceConfig { Name = "Nibbles", VoiceId = "ouL9IsyrSnUkCmfnD02u", Gender = "Male", Description = "Gnome-like, small" }
                 }
             };
         }
 
-        private void UpdateVoiceConfiguration()
-        {
-            // Filter out incomplete voices (skip rows with missing name or voice ID)
-            var validVoices = _voices.Where(v =>
-                !string.IsNullOrWhiteSpace(v.Name) &&
-                !string.IsNullOrWhiteSpace(v.VoiceId)).ToList();
-            
-            _voiceConfig.Voices = validVoices;
-
-            // Silently validate - only check if we have at least 1 male and 1 female among valid voices
-            if (_voiceConfig.IsValid(out string errorMessage))
-            {
-                // Update DialogueParser and ClaudeService only if valid
-                DialogueParser.UpdateVoiceMapping(_voiceConfig);
-                _claudeService.SetVoiceConfiguration(_voiceConfig);
-            }
-
-            // Always save settings (even if validation fails, we save what we have)
-            SaveSettings();
-        }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
@@ -309,7 +291,6 @@ namespace CK3_Reader
             long lastFileSize = 0;
             DateTime lastModified = DateTime.MinValue;
             int linesRead = 0;
-            string lastLine = "";
             int eventMarkersFound = 0;
 
             try
@@ -321,10 +302,7 @@ namespace CK3_Reader
                 
                 Dispatcher.Invoke(() =>
                 {
-                    txtStatus.Text = $"📂 Log file: {debugLog}\n" +
-                                   $"📊 Size: {lastFileSize:N0} bytes\n" +
-                                   $"🕒 Modified: {lastModified:HH:mm:ss}\n" +
-                                   $"✅ Monitoring from end of file...";
+                    SetStatus("Waiting for CK3 events", true);
                 });
 
                 using (FileStream stream = new FileStream(debugLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
@@ -332,16 +310,6 @@ namespace CK3_Reader
                     StreamReader reader = new StreamReader(stream);
                     long startPosition = stream.Length;
                     stream.Seek(0, SeekOrigin.End); // Start reading from the end of the file
-
-                    Dispatcher.Invoke(() =>
-                    {
-                        txtEvent.Text = $"🔍 DEBUG INFO:\n" +
-                                       $"Starting position: {startPosition:N0} bytes\n" +
-                                       $"Waiting for new events...\n" +
-                                       $"Looking for: {beginPattern} and {endPattern}\n\n" +
-                                       $"💡 TIP: The app only detects NEW events after it starts.\n" +
-                                       $"Trigger an event in CK3 to test!";
-                    });
 
                     while (!token.IsCancellationRequested)
                     {
@@ -357,7 +325,6 @@ namespace CK3_Reader
                         if (line != null)
                         {
                             linesRead++;
-                            lastLine = line.Length > 100 ? line.Substring(0, 100) + "..." : line;
                             
                             // Check file size changes
                             if (linesRead % 100 == 0)
@@ -376,10 +343,38 @@ namespace CK3_Reader
                                 eventText = string.Empty;
                                 startMessage = true;
                                 
+                                // Play custom notification sound
+                                Task.Run(() =>
+                                {
+                                    try
+                                    {
+                                        string soundPath = @"C:\Users\jack\Documents\CK3VoiceMod\CK3-WPF-Reader\subtle_notification,_#2-1776915984022.wav";
+                                        
+                                        if (File.Exists(soundPath))
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"[Sound] File found, playing: {soundPath}");
+                                            var player = new System.Media.SoundPlayer(soundPath);
+                                            player.Load(); // Load the file first
+                                            player.PlaySync(); // Then play it synchronously
+                                            System.Diagnostics.Debug.WriteLine($"[Sound] Playback completed");
+                                        }
+                                        else
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"[Sound] File NOT found at: {soundPath}");
+                                            // Fallback beep to confirm code is running
+                                            Console.Beep(400, 50);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[Sound] Error: {ex.Message}");
+                                        System.Diagnostics.Debug.WriteLine($"[Sound] Stack trace: {ex.StackTrace}");
+                                    }
+                                });
+                                
                                 Dispatcher.Invoke(() =>
                                 {
-                                    txtStatus.Text = $"🎯 Event marker found! (#{eventMarkersFound})";
-                                    txtEvent.Text = $"📥 Collecting event text...\nLine: {line}";
+                                    SetStatus("Event detected", true);
                                 });
                             }
 
@@ -406,142 +401,93 @@ namespace CK3_Reader
                                     }
 
                                     // Update UI with both raw and cleaned event text
-                                    Dispatcher.Invoke(async () =>
-                                    {
-                                        // Stop any currently playing audio when a new event is detected
-                                        _elevenLabsService.StopPlayback();
-                                        
-                                        txtStatus.Text = "✔️ Event found";
-                                        
-                                        // Show user-friendly current event
-                                        txtCurrentEvent.Text = eventText.Trim();
-                                        
-                                        // Show debug info only if debug mode is enabled
-                                        if (debugModeCheckbox.IsChecked == true)
-                                        {
-                                            txtEvent.Text = "=== RAW CK3 LOG CONTENT ===\n" + rawEventText.Trim() +
-                                                           "\n\n=== CLEANED TEXT ===\n" + eventText.Trim();
-                                        }
-                                        
-                                        // Check if we should skip OpenAI and go directly to ElevenLabs Flash
-                                        if (_skipOpenAI && _elevenLabsService.HasApiKey())
-                                        {
-                                            try
-                                            {
-                                                txtStatus.Text = "🔊 Generating speech with Flash v2.5...";
-                                                txtLlmTranslation.Text = "⚡ Skipping OpenAI - Using direct Flash v2.5 mode";
-                                                txtElevenLabsTtsStatus.Text = "🔊 Generating speech with ElevenLabs Flash v2.5...";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(33, 150, 243));
+                                   Dispatcher.Invoke(async () =>
+                                   {
+                                       // Stop any currently playing audio when a new event is detected
+                                       _elevenLabsService.StopPlayback();
+                                       
+                                       // Automatically process with Claude if API key is set
+                                       if (_claudeService.HasApiKey())
+                                       {
+                                           try
+                                           {
+                                               SetStatus("Processing with AI", true);
+                                               
+                                               string aiResponse = await _claudeService.ProcessEventTextAsync(eventText.Trim());
                                                 
-                                                // Use Flash model directly with the raw event text
-                                                await _elevenLabsService.TextToSpeechFlashAsync(
-                                                    eventText.Trim(),
-                                                    _danielVoiceId, // Daniel voice (configurable)
-                                                    _stability,
-                                                    _similarityBoost);
-                                                
-                                                txtStatus.Text = "✔️ Speech playback complete (Flash mode)";
-                                                txtElevenLabsTtsStatus.Text = "✔️ Flash v2.5 speech playback complete";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
-                                            }
-                                            catch (Exception ttsEx)
-                                            {
-                                                txtStatus.Text = $"⚠️ TTS Error: {ttsEx.Message}";
-                                                txtElevenLabsTtsStatus.Text = $"❌ Error: {ttsEx.Message}";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(231, 76, 60));
-                                            }
-                                        }
-                                        // Automatically process with Claude if API key is set
-                                        else if (_claudeService.HasApiKey())
-                                        {
-                                            try
-                                            {
-                                                txtLlmTranslation.Text = "Processing with Claude...";
-                                                txtElevenLabsTtsStatus.Text = "Waiting for Claude processing...";
-                                                
-                                                string aiResponse = await _claudeService.ProcessEventTextAsync(eventText.Trim());
-                                                
-                                                // Show in current event (user-friendly)
-                                                txtCurrentEvent.Text = aiResponse;
-                                                
-                                                // Show debug info only if debug mode is enabled
-                                                if (debugModeCheckbox.IsChecked == true)
-                                                {
-                                                    txtLlmTranslation.Text = aiResponse;
-                                                    
-                                                    // Parse the dialogue to show what was extracted
-                                                    var parsedEntries = DialogueParser.ParseOpenAIResponse(aiResponse);
-                                                    var parsedText = new System.Text.StringBuilder();
-                                                    parsedText.AppendLine($"Total speakers found: {parsedEntries.Count}\n");
-                                                    
-                                                    foreach (var entry in parsedEntries)
-                                                    {
-                                                        var textPreview = entry.Text.Length > 60 ? entry.Text.Substring(0, 60) + "..." : entry.Text;
-                                                        parsedText.AppendLine($"🎤 {entry.VoiceName}");
-                                                        parsedText.AppendLine($"   Voice ID: {entry.VoiceId}");
-                                                        parsedText.AppendLine($"   Text: {textPreview}");
-                                                        parsedText.AppendLine();
-                                                    }
-                                                    
-                                                    txtParsedDialogue.Text = parsedText.ToString();
-                                                }
-
                                                 // Automatically play with ElevenLabs if API key is set
                                                 if (_elevenLabsService.HasApiKey())
                                                 {
                                                     try
                                                     {
-                                                        txtStatus.Text = "🔊 Generating multi-speaker speech...";
-                                                        txtElevenLabsTtsStatus.Text = "🔊 Generating multi-speaker speech with ElevenLabs v3...";
-                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(33, 150, 243));
+                                                        // Parse the dialogue to detect speaker count
+                                                        var parsedEntries = DialogueParser.ParseOpenAIResponse(aiResponse);
                                                         
-                                                        // Use the new multi-speaker method that parses OpenAI response with voice quality settings
-                                                        await _elevenLabsService.TextToSpeechFromOpenAIAsync(
-                                                            aiResponse,
-                                                            _stability,
-                                                            _similarityBoost,
-                                                            _style,
-                                                            _useSpeakerBoost);
+                                                        // Get unique speakers and their voice IDs
+                                                        var uniqueSpeakers = parsedEntries.Select(e => e.VoiceName).Distinct().Count();
+                                                        var speakerNames = string.Join(", ", parsedEntries.Select(e => e.VoiceName).Distinct());
+                                                        var uniqueVoiceIds = parsedEntries.Select(e => e.VoiceId).Distinct().Count();
                                                         
-                                                        txtStatus.Text = "✔️ Speech playback complete";
-                                                        txtElevenLabsTtsStatus.Text = "✔️ Multi-speaker speech playback complete";
-                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
+                                                        // Debug: Log the voice mapping
+                                                        System.Diagnostics.Debug.WriteLine($"[MainWindow] Speaker → Voice ID mapping:");
+                                                        foreach (var entry in parsedEntries.GroupBy(e => e.VoiceName).Select(g => g.First()))
+                                                        {
+                                                            System.Diagnostics.Debug.WriteLine($"  {entry.VoiceName} → {entry.VoiceId}");
+                                                        }
+                                                        
+                                                        // Route based on speaker count
+                                                        if (uniqueSpeakers <= 1)
+                                                        {
+                                                            // Single speaker - use Flash v2.5 for speed
+                                                            SetStatus("Generating speech", true);
+                                                            SetModeInfo("Using: Flash v2.5 (Single Speaker)");
+                                                            
+                                                            // Get the Main voice ID
+                                                            string mainVoiceId = GetMainVoiceId();
+                                                            
+                                                            // Extract just the text (remove speaker names and tags for cleaner output)
+                                                            string cleanText = string.Join(" ", parsedEntries.Select(e => e.Text));
+                                                            
+                                                            await _elevenLabsService.TextToSpeechFlashAsync(
+                                                                cleanText,
+                                                                mainVoiceId,
+                                                                _stability,
+                                                                _similarityBoost);
+                                                        }
+                                                        else
+                                                        {
+                                                            // Multiple speakers - use v3 for quality
+                                                            SetStatus("Generating speech", true);
+                                                            SetModeInfo($"Using: Eleven v3 ({uniqueSpeakers} Speakers: {speakerNames}) | {uniqueVoiceIds} unique voice IDs");
+                                                            
+                                                            await _elevenLabsService.TextToSpeechFromOpenAIAsync(
+                                                                aiResponse,
+                                                                _stability,
+                                                                _similarityBoost,
+                                                                _style,
+                                                                _useSpeakerBoost);
+                                                        }
+                                                        
+                                                        SetStatus("Ready", false);
                                                     }
                                                     catch (Exception ttsEx)
                                                     {
-                                                        txtStatus.Text = $"⚠️ TTS Error: {ttsEx.Message}";
-                                                        txtElevenLabsTtsStatus.Text = $"❌ Error: {ttsEx.Message}";
-                                                        txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(231, 76, 60));
+                                                        SetStatus($"Error - {ttsEx.Message}", false);
                                                     }
                                                 }
                                                 else
                                                 {
-                                                    txtStatus.Text = "✔️ Event processed (TTS disabled - set ElevenLabs API key)";
-                                                    txtElevenLabsTtsStatus.Text = "⚠️ Set ElevenLabs API key in the sidebar to enable TTS";
-                                                    txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                                    SetStatus("Ready", false);
                                                 }
                                             }
                                             catch (Exception ex)
                                             {
-                                                txtLlmTranslation.Text = $"Error processing with AI: {ex.Message}";
-                                                txtElevenLabsTtsStatus.Text = "⚠️ Claude processing failed";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
+                                                SetStatus($"Error - {ex.Message}", false);
                                             }
                                         }
                                         else
                                         {
-                                            if (_skipOpenAI)
-                                            {
-                                                txtLlmTranslation.Text = "⚠️ Set ElevenLabs API key in the sidebar to enable Flash mode.";
-                                                txtElevenLabsTtsStatus.Text = "⚠️ ElevenLabs API key required for Flash mode";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
-                                            }
-                                            else
-                                            {
-                                                txtLlmTranslation.Text = "⚠️ Set Claude API key in the sidebar to enable automatic translation.";
-                                                txtElevenLabsTtsStatus.Text = "⚠️ Claude API key required";
-                                                txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
-                                            }
+                                            SetStatus("Error - API key required", false);
                                         }
                                     });
                                     
@@ -556,29 +502,12 @@ namespace CK3_Reader
                             Thread.Sleep(20); // Check every 20ms
                         }
 
-                        // Update status counter with debug info
+                        // Update status counter
                         if (!startMessage && linesRead % 50 == 0)
                         {
                             Dispatcher.Invoke(() =>
                             {
-                                if (!txtStatus.Text.Contains("Event found") && !txtStatus.Text.Contains("Event marker"))
-                                {
-                                    txtStatus.Text = $"📡 Monitoring{counter}\n" +
-                                                   $"Lines read: {linesRead:N0}\n" +
-                                                   $"File size: {lastFileSize:N0} bytes\n" +
-                                                   $"Events found: {eventMarkersFound}";
-                                    
-                                    if (!string.IsNullOrEmpty(lastLine))
-                                    {
-                                        txtEvent.Text = $"🔍 DEBUG INFO:\n" +
-                                                       $"Lines scanned: {linesRead:N0}\n" +
-                                                       $"Events detected: {eventMarkersFound}\n" +
-                                                       $"File size: {lastFileSize:N0} bytes\n" +
-                                                       $"Last modified: {lastModified:HH:mm:ss}\n\n" +
-                                                       $"Last line read:\n{lastLine}\n\n" +
-                                                       $"💡 Waiting for '{beginPattern}' marker...";
-                                    }
-                                }
+                                SetStatus("Waiting for CK3 events", true);
                             });
                         }
                     }
@@ -588,7 +517,7 @@ namespace CK3_Reader
             {
                 Dispatcher.Invoke(() =>
                 {
-                    txtStatus.Text = "❌ Error: " + ex.Message;
+                    SetStatus("Error - " + ex.Message, false);
                 });
             }
         }
@@ -616,7 +545,7 @@ namespace CK3_Reader
                 
                 if (_claudeService.HasApiKey())
                 {
-                    txtApiStatus.Text = "✔️ API key set - Auto-processing enabled";
+                    txtApiStatus.Text = "✔️ API key set";
                     txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
                 }
                 else
@@ -639,7 +568,7 @@ namespace CK3_Reader
                 
                 if (_elevenLabsService.HasApiKey())
                 {
-                    txtElevenLabsStatus.Text = "✔️ API key set - TTS enabled";
+                    txtElevenLabsStatus.Text = "✔️ API key set";
                     txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(46, 204, 113));
                 }
                 else
@@ -673,284 +602,99 @@ namespace CK3_Reader
             }
         }
 
-        private void StabilitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (stabilityLabel != null)
-            {
-                _stability = e.NewValue / 100.0;
-                stabilityLabel.Text = $"{_stability:F2}";
-                SaveSettings();
-            }
-        }
-
-        private void SimilaritySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (similarityLabel != null)
-            {
-                _similarityBoost = e.NewValue / 100.0;
-                similarityLabel.Text = $"{_similarityBoost:F2}";
-                SaveSettings();
-            }
-        }
-
-        private void StyleSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (styleLabel != null)
-            {
-                _style = e.NewValue / 100.0;
-                styleLabel.Text = $"{_style:F2}";
-                SaveSettings();
-            }
-        }
-
-        private void SpeakerBoostCheckbox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (speakerBoostCheckbox != null)
-            {
-                _useSpeakerBoost = speakerBoostCheckbox.IsChecked ?? true;
-                SaveSettings();
-            }
-        }
-
-        private void SkipOpenAICheckbox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (skipOpenAICheckbox != null)
-            {
-                _skipOpenAI = skipOpenAICheckbox.IsChecked ?? false;
-                UpdateModeInfo();
-                SaveSettings();
-            }
-        }
-
-        private void UpdateModeInfo()
-        {
-            if (txtModeInfo != null)
-            {
-                if (_skipOpenAI)
-                {
-                    txtModeInfo.Text = "⚡ Flash Mode: Events will be sent directly to ElevenLabs Flash v2.5 (faster, no Claude processing). Settings are saved automatically.";
-                }
-                else
-                {
-                    txtModeInfo.Text = "Events will be automatically processed with Claude and played via ElevenLabs TTS. Settings are saved automatically.";
-                }
-            }
-        }
-
-        private void BtnAddVoice_Click(object sender, RoutedEventArgs e)
-        {
-            // Add a new empty voice to the collection
-            var newVoice = new VoiceConfig
-            {
-                Name = "NewVoice",
-                VoiceId = "",
-                Gender = "Male"
-            };
-            _voices.Add(newVoice);
-            
-            // Select the new row for editing
-            voicesDataGrid.SelectedItem = newVoice;
-            voicesDataGrid.ScrollIntoView(newVoice);
-        }
-
-        private void BtnRemoveVoice_Click(object sender, RoutedEventArgs e)
-        {
-            if (voicesDataGrid.SelectedItem is VoiceConfig selectedVoice)
-            {
-                // Prevent removing the "Main" voice
-                if (selectedVoice.Name == "Main")
-                {
-                    MessageBox.Show("The 'Main' voice cannot be removed. This is the narrator/player voice and is required.",
-                                  "Cannot Remove Main Voice",
-                                  MessageBoxButton.OK,
-                                  MessageBoxImage.Warning);
-                    return;
-                }
-                
-                // Just remove it - validation will happen silently in UpdateVoiceConfiguration
-                _voices.Remove(selectedVoice);
-                UpdateVoiceConfiguration();
-            }
-        }
-
-        private void BtnResetVoices_Click(object sender, RoutedEventArgs e)
-        {
-            var result = MessageBox.Show(
-                "This will reset all voices to the default configuration. Are you sure?",
-                "Reset Voices",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                _voiceConfig = GetDefaultVoices();
-                _voices.Clear();
-                foreach (var voice in _voiceConfig.Voices)
-                {
-                    _voices.Add(voice);
-                }
-                UpdateVoiceConfiguration();
-            }
-        }
-
-        private async void BtnTestVoice_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is System.Windows.Controls.Button button && button.Tag is VoiceConfig voice)
-            {
-                // Trim whitespace from voice ID
-                string voiceId = voice.VoiceId?.Trim() ?? "";
-                
-                if (string.IsNullOrWhiteSpace(voiceId))
-                {
-                    txtStatus.Text = "⚠️ Cannot test voice - Voice ID is empty";
-                    return;
-                }
-
-                // Update the voice ID in case it had whitespace
-                voice.VoiceId = voiceId;
-
-                string testText = txtTestVoiceText?.Text ?? "Hello! This is a test of the voice.";
-                
-                try
-                {
-                    txtStatus.Text = $"🔊 Testing voice: {voice.Name}...";
-                    await _elevenLabsService.TextToSpeechAsync(testText, voiceId);
-                    txtStatus.Text = $"✔️ Voice test complete: {voice.Name}";
-                }
-                catch (Exception ex)
-                {
-                    // Provide helpful error messages
-                    if (ex.Message.Contains("401") || ex.Message.Contains("403"))
-                    {
-                        txtStatus.Text = "❌ Authentication failed - Check your ElevenLabs API key";
-                    }
-                    else
-                    {
-                        txtStatus.Text = $"❌ Voice test failed: {ex.Message}";
-                    }
-                }
-            }
-        }
-
-        private void VoicesDataGrid_CellEditEnding(object sender, System.Windows.Controls.DataGridCellEditEndingEventArgs e)
-        {
-            // Prevent changing the "Main" voice name
-            if (e.Column.Header.ToString() == "Name" && e.Row.Item is VoiceConfig voice)
-            {
-                var editingElement = e.EditingElement as System.Windows.Controls.TextBox;
-                if (editingElement != null)
-                {
-                    // Find the original voice in the collection
-                    var originalVoice = _voices.FirstOrDefault(v => v == voice);
-                    if (originalVoice != null && originalVoice.Name == "Main" && editingElement.Text != "Main")
-                    {
-                        // Cancel the edit and restore the original value
-                        e.Cancel = true;
-                        MessageBox.Show("The 'Main' voice name cannot be changed. This is the narrator/player voice.",
-                                      "Cannot Rename Main Voice",
-                                      MessageBoxButton.OK,
-                                      MessageBoxImage.Information);
-                        return;
-                    }
-                }
-            }
-            
-            // Update configuration when user finishes editing a cell
-            if (!_isInitializing && !e.Cancel)
-            {
-                // Use Dispatcher to ensure the edit is committed before updating
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    UpdateVoiceConfiguration();
-                }), System.Windows.Threading.DispatcherPriority.Background);
-            }
-        }
-
         private void BtnStopVoice_Click(object sender, RoutedEventArgs e)
         {
             _elevenLabsService.StopPlayback();
-            txtStatus.Text = "⏹️ Voice playback stopped";
-            txtElevenLabsTtsStatus.Text = "⏹️ Playback stopped by user";
-            txtElevenLabsTtsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 152, 0));
+            SetStatus("Ready", false);
         }
-
-        private void BtnResetAllSettings_Click(object sender, RoutedEventArgs e)
+        
+        /// <summary>
+        /// Updates the mode info text
+        /// </summary>
+        private void SetModeInfo(string info)
         {
-            var result = MessageBox.Show(
-                "This will reset ALL settings to defaults including:\n\n" +
-                "• API Keys (you'll need to re-enter them)\n" +
-                "• Custom Voices (reset to Main, Sarah, Clyde)\n" +
-                "• Volume and Speed settings\n" +
-                "• Voice quality settings\n" +
-                "• All other preferences\n\n" +
-                "Are you sure you want to continue?",
-                "Reset All Settings",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (result == MessageBoxResult.Yes)
+            if (!Dispatcher.CheckAccess())
             {
-                try
-                {
-                    // Reset all settings to defaults
-                    Properties.Settings.Default.Reset();
-                    Properties.Settings.Default.Save();
-
-                    // Reset voices to defaults
-                    _voiceConfig = GetDefaultVoices();
-                    _voices.Clear();
-                    foreach (var voice in _voiceConfig.Voices)
-                    {
-                        _voices.Add(voice);
-                    }
-
-                    // Clear API keys from UI
-                    txtApiKey.Password = string.Empty;
-                    txtElevenLabsApiKey.Password = string.Empty;
-
-                    // Reset sliders to defaults
-                    volumeSlider.Value = 100;
-                    speedSlider.Value = 100;
-                    stabilitySlider.Value = 25;
-                    similaritySlider.Value = 85;
-                    styleSlider.Value = 65;
-                    speakerBoostCheckbox.IsChecked = true;
-                    skipOpenAICheckbox.IsChecked = false;
-
-                    // Update services
-                    UpdateVoiceConfiguration();
-
-                    // Update status
-                    txtApiStatus.Text = "⚠️ No API key set";
-                    txtApiStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
-                    txtElevenLabsStatus.Text = "⚠️ No API key set";
-                    txtElevenLabsStatus.Foreground = new SolidColorBrush(Color.FromRgb(255, 204, 0));
-
-                    MessageBox.Show(
-                        "All settings have been reset to defaults!\n\n" +
-                        "Please re-enter your API keys to continue using the app.",
-                        "Settings Reset Complete",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show(
-                        $"Error resetting settings: {ex.Message}",
-                        "Reset Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                }
+                Dispatcher.Invoke(() => SetModeInfo(info), System.Windows.Threading.DispatcherPriority.Send);
+                return;
             }
+            
+            if (!string.IsNullOrWhiteSpace(info))
+            {
+                txtModeInfo.Text = info;
+                txtModeInfo.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                txtModeInfo.Visibility = Visibility.Collapsed;
+            }
+            
+            // Force UI update
+            txtModeInfo.InvalidateVisual();
         }
-
-        private void DebugModeCheckbox_Changed(object sender, RoutedEventArgs e)
+        
+        /// <summary>
+        /// Timer tick event for animating the loading indicator
+        /// </summary>
+        private void LoadingTimer_Tick(object? sender, EventArgs e)
         {
-            if (debugModeCheckbox != null && debugPanel != null)
+            _loadingDots = (_loadingDots % 3) + 1;
+            loadingSpinner.Text = new string('.', _loadingDots);
+        }
+        
+        /// <summary>
+        /// Updates the status text and shows/hides the loading indicator
+        /// </summary>
+        private void SetStatus(string message, bool showSpinner)
+        {
+            if (!Dispatcher.CheckAccess())
             {
-                // Show or hide debug panel based on checkbox state
-                debugPanel.Visibility = debugModeCheckbox.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+                Dispatcher.Invoke(() => SetStatus(message, showSpinner), System.Windows.Threading.DispatcherPriority.Send);
+                return;
             }
+            
+            txtStatus.Text = "Status: " + message;
+            
+            if (showSpinner)
+            {
+                loadingSpinner.Visibility = Visibility.Visible;
+                _loadingDots = 0;
+                loadingSpinner.Text = ".";
+                _loadingTimer?.Start();
+            }
+            else
+            {
+                _loadingTimer?.Stop();
+                loadingSpinner.Visibility = Visibility.Collapsed;
+                loadingSpinner.Text = "";
+            }
+            
+            // Force UI update
+            txtStatus.InvalidateVisual();
+            loadingSpinner.InvalidateVisual();
+        }
+        
+        /// <summary>
+        /// Gets the voice ID for the Main narrator voice from the current voice configuration
+        /// </summary>
+        private string GetMainVoiceId()
+        {
+            // Find the Main voice in the configuration
+            var mainVoice = _voiceConfig.Voices.FirstOrDefault(v => v.Name == "Main");
+            if (mainVoice != null && !string.IsNullOrWhiteSpace(mainVoice.VoiceId))
+            {
+                return mainVoice.VoiceId.Trim();
+            }
+            
+            // Fallback: use the first male voice if Main doesn't exist
+            var firstMaleVoice = _voiceConfig.Voices.FirstOrDefault(v => v.Gender == "Male" && !string.IsNullOrWhiteSpace(v.VoiceId));
+            if (firstMaleVoice != null)
+            {
+                return firstMaleVoice.VoiceId.Trim();
+            }
+            
+            // Last resort: return default Daniel voice ID
+            return "yhf80q1381zd2JJQ4tM7";
         }
     }
 }

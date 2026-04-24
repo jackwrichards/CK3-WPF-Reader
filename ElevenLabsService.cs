@@ -16,11 +16,26 @@ namespace CK3_Reader
         private readonly HttpClient _httpClient;
         private readonly MediaPlayer _mediaPlayer;
         private const string API_BASE_URL = "https://api.elevenlabs.io";
+        
+        // Callback for playback progress updates
+        public Action<double, double>? OnPlaybackProgress { get; set; } // (currentSeconds, totalSeconds)
 
         public ElevenLabsService()
         {
             _httpClient = new HttpClient();
             _mediaPlayer = new MediaPlayer();
+        }
+        
+        /// <summary>
+        /// Gets the current audio duration in seconds (0 if no audio loaded)
+        /// </summary>
+        public double GetAudioDuration()
+        {
+            if (_mediaPlayer.NaturalDuration.HasTimeSpan)
+            {
+                return _mediaPlayer.NaturalDuration.TimeSpan.TotalSeconds;
+            }
+            return 0;
         }
 
         public void SetApiKey(string apiKey)
@@ -332,11 +347,12 @@ namespace CK3_Reader
         }
 
         /// <summary>
-        /// Plays an audio file using MediaPlayer
+        /// Plays an audio file using MediaPlayer with progress reporting
         /// </summary>
         private Task PlayAudioAsync(string filePath)
         {
             var tcs = new TaskCompletionSource<bool>();
+            System.Windows.Threading.DispatcherTimer? progressTimer = null;
 
             // Define event handlers that can be removed later
             EventHandler? mediaOpenedHandler = null;
@@ -348,23 +364,48 @@ namespace CK3_Reader
                 // Apply speed ratio after media is opened and ready
                 // This ensures the current SpeedRatio setting is used
                 _mediaPlayer.SpeedRatio = _mediaPlayer.SpeedRatio;
+                
+                // Start progress reporting timer
+                if (_mediaPlayer.NaturalDuration.HasTimeSpan)
+                {
+                    double totalSeconds = _mediaPlayer.NaturalDuration.TimeSpan.TotalSeconds;
+                    
+                    progressTimer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromMilliseconds(100) // Update every 100ms
+                    };
+                    
+                    progressTimer.Tick += (ts, te) =>
+                    {
+                        double currentSeconds = _mediaPlayer.Position.TotalSeconds;
+                        OnPlaybackProgress?.Invoke(currentSeconds, totalSeconds);
+                    };
+                    
+                    progressTimer.Start();
+                }
             };
 
             mediaEndedHandler = (s, e) =>
             {
+                // Stop progress timer
+                progressTimer?.Stop();
+                
                 // Remove event handlers to prevent memory leaks and duplicate calls
                 _mediaPlayer.MediaOpened -= mediaOpenedHandler;
                 _mediaPlayer.MediaEnded -= mediaEndedHandler;
                 _mediaPlayer.MediaFailed -= mediaFailedHandler;
                 
-                // Don't close the MediaPlayer to preserve settings like SpeedRatio
-                // Just stop it to allow reuse
-                _mediaPlayer.Stop();
+                // Don't call Stop() here - the media has already ended naturally
+                // Calling Stop() can cut off the last bit of audio
+                // The MediaPlayer will be ready for the next file when Open() is called again
                 tcs.TrySetResult(true);
             };
 
             mediaFailedHandler = (s, e) =>
             {
+                // Stop progress timer
+                progressTimer?.Stop();
+                
                 // Remove event handlers to prevent memory leaks and duplicate calls
                 _mediaPlayer.MediaOpened -= mediaOpenedHandler;
                 _mediaPlayer.MediaEnded -= mediaEndedHandler;
